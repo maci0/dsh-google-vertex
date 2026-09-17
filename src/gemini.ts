@@ -18,7 +18,7 @@ import type {
   StreamChunk,
   TokenUsage,
 } from './host.ts'
-import { EMPTY_RESPONSE_CODE, endpointOrigin, failureForEvent } from './wire.ts'
+import { EMPTY_RESPONSE_CODE, endpointOrigin, failureForEvent, resultText } from './wire.ts'
 
 /** Harness code reported when the provider refused on safety grounds. */
 export const SAFETY_BLOCKED_CODE = 'SAFETY'
@@ -41,12 +41,17 @@ export const DEFAULT_GEMINI_CONTEXT_WINDOW = 1_048_576
  */
 export const DEFAULT_GEMINI_MAX_TOKENS = 65_535
 
-/** One advertised Gemini model with the capacities Vertex enforces. */
+/**
+ * One advertised Gemini model. Capacities are not per model: every current
+ * Gemini model serves the same context window and the same output cap, and a
+ * configured catalog names ids only, so nothing can differ them. The pair is
+ * {@link DEFAULT_GEMINI_CONTEXT_WINDOW} and {@link DEFAULT_GEMINI_MAX_TOKENS};
+ * give a model its own capacities when one actually differs, and the adapter's
+ * capacity lookup will read them from an entry here again.
+ */
 export interface GeminiModel {
   readonly id: string
   readonly name: string
-  readonly contextWindow: number
-  readonly maxTokens: number
 }
 
 /**
@@ -54,12 +59,12 @@ export interface GeminiModel {
  * provider's own aliases, so a promoted release needs no edit here.
  */
 export const DEFAULT_GEMINI_MODELS: readonly GeminiModel[] = [
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Vertex)', contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW, maxTokens: DEFAULT_GEMINI_MAX_TOKENS },
-  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview (Vertex)', contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW, maxTokens: DEFAULT_GEMINI_MAX_TOKENS },
-  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview (Vertex)', contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW, maxTokens: DEFAULT_GEMINI_MAX_TOKENS },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Vertex)', contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW, maxTokens: DEFAULT_GEMINI_MAX_TOKENS },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Vertex)', contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW, maxTokens: DEFAULT_GEMINI_MAX_TOKENS },
-  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite (Vertex)', contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW, maxTokens: DEFAULT_GEMINI_MAX_TOKENS },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Vertex)' },
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview (Vertex)' },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview (Vertex)' },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Vertex)' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Vertex)' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite (Vertex)' },
 ]
 
 /**
@@ -77,21 +82,21 @@ export function geminiEndpointFor(project: string, location: string, model: stri
 }
 
 /** One function call the model requested. */
-export interface GeminiFunctionCall {
+interface GeminiFunctionCall {
   name: string
   args?: Record<string, unknown>
   id?: string
 }
 
 /** One function result being sent back. */
-export interface GeminiFunctionResponse {
+interface GeminiFunctionResponse {
   name: string
   id?: string
   response: Record<string, unknown>
 }
 
 /** One content part on the wire. */
-export interface GeminiPart {
+interface GeminiPart {
   text?: string
   thought?: boolean
   thoughtSignature?: string
@@ -106,7 +111,7 @@ export interface GeminiContent {
 }
 
 /** One wire tool declaration. */
-export interface GeminiToolDeclaration {
+interface GeminiToolDeclaration {
   name: string
   description: string
   parameters: Record<string, unknown>
@@ -139,13 +144,13 @@ export interface GeminiWireConfig {
  * ("Function call is missing a thought_signature"). Text parts can carry one
  * too, so the entry is kept for both block kinds.
  */
-export interface GeminiReplayBlock {
+interface GeminiReplayBlock {
   readonly type: 'text' | 'tool-call'
   readonly thoughtSignature?: string
 }
 
 /** The envelope the harness stores on an assistant message and hands back. */
-export interface GeminiReplayEnvelope {
+interface GeminiReplayEnvelope {
   readonly response: { readonly kind: 'google-vertex-gemini'; readonly version: 1; readonly model: string }
   readonly blocks: readonly GeminiReplayBlock[]
 }
@@ -196,17 +201,6 @@ export function readGeminiReplay(message: Message, model: string): readonly Gemi
     blocks.push({ type, ...signature === undefined ? {} : { thoughtSignature: signature } })
   }
   return blocks
-}
-
-/** Flatten a tool result's nested blocks to the plain text Gemini accepts. */
-function resultText(blocks: readonly ContentBlock[]): string {
-  const parts: string[] = []
-  for (const block of blocks) {
-    if (block.type === 'text' && typeof block.text === 'string') parts.push(block.text)
-    else if (block.type === 'tool-call') parts.push(`[tool call] ${String(block.name)}(${String(block.arguments)})`)
-    else if (block.type === 'tool-result') parts.push(resultText((block.content ?? []) as readonly ContentBlock[]))
-  }
-  return parts.join('').length > 0 ? parts.join('') : '(no output)'
 }
 
 /** Parse a model-produced arguments string into the object Gemini requires. */
@@ -341,7 +335,7 @@ export function buildGeminiRequest(options: GenerateOptions, config: GeminiWireC
 }
 
 /** Raw usage counters as Vertex reports them. */
-export interface GeminiUsageMetadata {
+interface GeminiUsageMetadata {
   promptTokenCount?: number
   candidatesTokenCount?: number
   cachedContentTokenCount?: number
@@ -380,6 +374,10 @@ export function mapGeminiUsage(usage: GeminiUsageMetadata): TokenUsage {
 
 /**
  * Map Gemini's finish reason onto the harness vocabulary.
+ *
+ * `STOP`, `OTHER`, and an absent reason all mean the same thing here, and so
+ * does any reason a provider release adds: the turn ended, and only a tool call
+ * in it changes what that is called.
  * @param reason - the `finishReason` Vertex reported.
  * @param sawToolCall - whether the response contained a function call, which
  *   Gemini reports as an ordinary `STOP`.
@@ -410,10 +408,6 @@ export function mapGeminiFinishReason(reason: string | undefined, sawToolCall: b
           code: 'INVALID_REQUEST',
         },
       }
-    case 'STOP':
-    case 'OTHER':
-    case undefined:
-      return sawToolCall ? { kind: 'tool-calls' } : { kind: 'stop' }
     default:
       return sawToolCall ? { kind: 'tool-calls' } : { kind: 'stop' }
   }
@@ -584,6 +578,11 @@ export class GeminiStreamTranslator {
 
   /** True once an in-band error ended the stream, which `handle` already reported. */
   get failed(): boolean {
+    return this.#failed
+  }
+
+  /** {@inheritDoc StreamTranslatorLike.terminal} */
+  get terminal(): boolean {
     return this.#failed
   }
 

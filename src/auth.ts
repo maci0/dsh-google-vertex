@@ -9,7 +9,9 @@
  * the harness can turn an RSA key into a bearer token on the request path.
  *
  * Everything here is pure enough to test without a network: the token endpoint
- * transport, the clock, and the scope are injectable.
+ * transport and the clock are injectable. The scope every request needs and the
+ * early-refresh margin are fixed, because nothing has ever needed to vary them:
+ * one Vertex route and one margin are what this plugin talks to.
  *
  * @module dsh-google-vertex/auth
  */
@@ -23,7 +25,7 @@ import { isAbsolute, join } from 'node:path'
 export const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 
 /** Token endpoint a service-account file names; this is the public default. */
-export const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token'
+const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token'
 
 /** Assertion lifetime Google accepts; the token endpoint caps it at one hour. */
 const ASSERTION_LIFETIME_SECONDS = 3600
@@ -181,15 +183,11 @@ interface CachedToken {
 }
 
 /** Options for {@link ServiceAccountTokens}. */
-export interface TokenSourceOptions {
+interface TokenSourceOptions {
   /** Transport; defaults to the process `fetch`. */
   fetch?: FetchLike
   /** Clock in milliseconds; defaults to `Date.now`. */
   now?: () => number
-  /** OAuth scope; defaults to {@link CLOUD_PLATFORM_SCOPE}. */
-  scope?: string
-  /** Early-refresh margin in milliseconds. */
-  refreshMarginMs?: number
 }
 
 /**
@@ -202,21 +200,17 @@ export class ServiceAccountTokens {
   readonly #account: ServiceAccount
   readonly #fetch: FetchLike
   readonly #now: () => number
-  readonly #scope: string
-  readonly #refreshMarginMs: number
   #cached: CachedToken | undefined
   #pending: Promise<string> | undefined
 
   /**
    * @param account - the parsed service-account credentials.
-   * @param options - injectable transport, clock, scope, and refresh margin.
+   * @param options - injectable transport and clock.
    */
   constructor(account: ServiceAccount, options: TokenSourceOptions = {}) {
     this.#account = account
     this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
     this.#now = options.now ?? (() => Date.now())
-    this.#scope = options.scope ?? CLOUD_PLATFORM_SCOPE
-    this.#refreshMarginMs = options.refreshMarginMs ?? DEFAULT_REFRESH_MARGIN_MS
   }
 
   /**
@@ -230,7 +224,7 @@ export class ServiceAccountTokens {
    */
   async get(signal?: AbortSignal): Promise<string> {
     const cached = this.#cached
-    if (cached !== undefined && this.#now() < cached.expiresAt - this.#refreshMarginMs) return cached.value
+    if (cached !== undefined && this.#now() < cached.expiresAt - DEFAULT_REFRESH_MARGIN_MS) return cached.value
 
     const pending = this.#pending ?? this.#mint(signal)
     this.#pending = pending
@@ -244,7 +238,7 @@ export class ServiceAccountTokens {
   /** Mint one token and cache it. */
   async #mint(signal?: AbortSignal): Promise<string> {
     const nowSeconds = Math.floor(this.#now() / 1000)
-    const assertion = signedAssertion(this.#account, nowSeconds, this.#scope)
+    const assertion = signedAssertion(this.#account, nowSeconds, CLOUD_PLATFORM_SCOPE)
     const tokenUri = this.#account.token_uri ?? DEFAULT_TOKEN_URI
 
     let response: Response

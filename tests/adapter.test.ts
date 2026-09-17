@@ -13,8 +13,9 @@ import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 
 import { GoogleVertexAnthropicAdapter, type VertexAnthropicConfig } from '../src/adapter.ts'
 import { VertexAuthError, type FetchLike, type ServiceAccount } from '../src/auth.ts'
-import type { GenerateOptions, StreamChunk } from '../src/host.ts'
+import type { GenerateOptions } from '../src/host.ts'
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '../src/wire.ts'
+import { collect, stallingResponse, streamResponse, tokens } from './support.ts'
 
 const CONFIG: VertexAnthropicConfig = {
   serviceAccount: { client_email: 'x@y', private_key: 'unused' } as ServiceAccount,
@@ -34,50 +35,6 @@ const OPTIONS: GenerateOptions = {
   messages: [{ id: '1', role: 'user', content: [{ type: 'text', text: 'hi' }] }],
 }
 
-/** A streaming response whose body arrives in the given chunks. */
-function streamResponse(chunks: readonly string[], init: ResponseInit = {}): Response {
-  const encoder = new TextEncoder()
-  return new Response(new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
-      controller.close()
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' }, ...init })
-}
-
-/** A fixed token source that counts how often it was asked. */
-function tokens(value = 'access-token'): { get(): Promise<string>; calls: () => number } {
-  let calls = 0
-  return {
-    async get() {
-      calls += 1
-      return value
-    },
-    calls: () => calls,
-  }
-}
-
-/**
- * A body that sends the given chunks and then stalls until the request signal
- * aborts — which is how a real `fetch` body answers an aborted read.
- */
-function stallingResponse(signal: AbortSignal | null | undefined, before: readonly string[] = []): Response {
-  const encoder = new TextEncoder()
-  return new Response(new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of before) controller.enqueue(encoder.encode(chunk))
-      signal?.addEventListener('abort', () => controller.error(new Error('The operation was aborted')), { once: true })
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
-}
-
-/** Collect one adapter stream. */
-async function collect(adapter: GoogleVertexAnthropicAdapter, options: GenerateOptions = OPTIONS): Promise<StreamChunk[]> {
-  const chunks: StreamChunk[] = []
-  for await (const chunk of adapter.stream(options)) chunks.push(chunk)
-  return chunks
-}
-
 test('streams text through the global publisher endpoint with the bearer token', async () => {
   const requests: { url: string; init: RequestInit }[] = []
   const fetch: FetchLike = (url, init) => {
@@ -92,7 +49,7 @@ test('streams text through the global publisher endpoint with the bearer token',
     ]))
   }
   const adapter = new GoogleVertexAnthropicAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.deepEqual(chunks, [
     { type: 'block-start', index: 0, blockType: 'text' },
@@ -135,7 +92,7 @@ test('a tool turn reaches the harness as raw JSON argument deltas', async () => 
     'data: {"type":"message_stop"}\n\n',
   ]))
   const adapter = new GoogleVertexAnthropicAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.deepEqual(chunks.at(-2), { type: 'usage', usage: { inputTokens: 0, outputTokens: 9, totalTokens: 9 } })
   assert.deepEqual(chunks.at(-1), { type: 'finish', reason: { kind: 'tool-calls' } })
@@ -154,7 +111,7 @@ test('a refused request becomes one classified terminal finish', async () => {
     { status: 404, headers: { 'content-type': 'application/json' } },
   ))
   const adapter = new GoogleVertexAnthropicAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.equal(chunks.length, 1)
   assert.deepEqual(chunks[0], {
@@ -180,7 +137,7 @@ test('a credential failure never reaches the wire', async () => {
     fetch,
     tokens: { get: () => Promise.reject(new VertexAuthError('AUTH', 'google-vertex: token endpoint refused the service account (HTTP 400)')) },
   })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.equal(called, 0)
   assert.deepEqual(chunks, [{
@@ -198,7 +155,7 @@ test('a body that ends before message_stop is a transport truncation', async () 
     'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}\n\n',
   ]))
   const adapter = new GoogleVertexAnthropicAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.deepEqual(chunks.at(-1), {
     type: 'finish',
@@ -231,8 +188,8 @@ test('one token serves many streams', async () => {
   const source = tokens()
   const fetch: FetchLike = () => Promise.resolve(streamResponse(['data: {"type":"message_stop"}\n\n']))
   const adapter = new GoogleVertexAnthropicAdapter(CONFIG, { fetch, tokens: source })
-  await collect(adapter)
-  await collect(adapter)
+  await collect(adapter, OPTIONS)
+  await collect(adapter, OPTIONS)
   assert.equal(source.calls(), 2)
 })
 
@@ -242,7 +199,7 @@ test('a stalled stream is one TIMEOUT finish, not a hang', async () => {
     'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}\n\n',
   ]))
   const adapter = new GoogleVertexAnthropicAdapter({ ...CONFIG, streamIdleTimeoutMs: 20 }, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   // The bytes that did arrive are kept, and exactly one terminal chunk reports
   // why the rest never did.
@@ -274,7 +231,7 @@ test('a hung token mint is bounded by the same watchdog signal', async () => {
       },
     },
   })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.equal(signals.length, 1)
   assert.equal(signals[0]?.aborted, true)
@@ -292,7 +249,7 @@ test('an in-band error followed by a stalled body still yields one terminal chun
     'data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n',
   ]))
   const adapter = new GoogleVertexAnthropicAdapter({ ...CONFIG, streamIdleTimeoutMs: 20 }, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.deepEqual(chunks, [{
     type: 'finish',
@@ -309,7 +266,7 @@ test('a stream that reported no counters emits no usage chunk', async () => {
     'data: {"type":"message_stop"}\n\n',
   ]))
   const adapter = new GoogleVertexAnthropicAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.equal(chunks.some(chunk => chunk.type === 'usage'), false)
   assert.deepEqual(chunks.at(-1), { type: 'finish', reason: { kind: 'stop' } })

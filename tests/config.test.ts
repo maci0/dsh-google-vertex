@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { apply, Config, DEFAULT_MODELS, GEMINI_PROVIDER, PROVIDER, resolveConfig } from '../src/index.ts'
+import { DEFAULT_GEMINI_CONTEXT_WINDOW } from '../src/gemini.ts'
 import type { HostContext } from '../src/host.ts'
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, MAX_TIMER_DELAY_MS } from '../src/wire.ts'
 
@@ -76,14 +77,17 @@ test('the launch environment is the fallback credential and region source', () =
   assert.equal(resolved.anthropic.location, 'europe-west1')
 })
 
-test('an explicit Gemini catalog keeps the built-in capacities for known ids', () => {
+test('an explicit Gemini catalog keeps the built-in wording for known ids', () => {
   const resolved = resolveConfig({ serviceAccountFile: accountPath, geminiModels: ['gemini-3.5-flash', 'gemini-9-future'] }, NO_ENV)
-  assert.deepEqual(resolved.gemini.models.map(model => model.id), ['gemini-3.5-flash', 'gemini-9-future'])
-  // The known id keeps Vertex's exclusive output ceiling minus one; the
-  // unfamiliar one gets the family default rather than a guess.
-  assert.equal(resolved.gemini.models[0]?.maxTokens, 65_535)
-  assert.equal(resolved.gemini.models[1]?.maxTokens, 65_535)
-  assert.equal(resolved.gemini.models[1]?.contextWindow, 1_048_576)
+  assert.deepEqual(resolved.gemini.models, [
+    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Vertex)' },
+    { id: 'gemini-9-future', name: 'gemini-9-future' },
+  ])
+  // Capacities are not per model: every id serves Vertex's exclusive output
+  // ceiling minus one, and the family context window.
+  assert.equal(resolved.gemini.maxTokens, 65_535)
+  assert.equal(resolved.gemini.models[1]?.id, 'gemini-9-future')
+  assert.equal(DEFAULT_GEMINI_CONTEXT_WINDOW, 1_048_576)
 })
 
 test('the project falls back to the launch environment before the file', () => {

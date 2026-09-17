@@ -22,7 +22,7 @@ import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { GoogleVertexAnthropicAdapter } from './adapter.ts'
 import type { VertexAnthropicConfig, VertexModel } from './adapter.ts'
 import { loadServiceAccount } from './auth.ts'
-import { DEFAULT_GEMINI_MODELS, type GeminiModel } from './gemini.ts'
+import { DEFAULT_GEMINI_CONTEXT_WINDOW, DEFAULT_GEMINI_MAX_TOKENS, DEFAULT_GEMINI_MODELS, type GeminiModel } from './gemini.ts'
 import { GoogleVertexGeminiAdapter } from './gemini_adapter.ts'
 import type { GeminiAdapterConfig } from './gemini_adapter.ts'
 import { DEFAULT_LOCATION, DEFAULT_STREAM_IDLE_TIMEOUT_MS, MAX_TIMER_DELAY_MS } from './wire.ts'
@@ -83,7 +83,11 @@ export interface Config {
   readonly models?: string[]
   /** Gemini model ids to advertise, replacing the built-in catalog. */
   readonly geminiModels?: string[]
-  /** Claude context window reported for every model; defaults to 200000. */
+  /**
+   * Claude context window reported for every model; defaults to 200000. The
+   * Gemini route reports {@link DEFAULT_GEMINI_CONTEXT_WINDOW} for every model
+   * it serves, which is why this key has no Gemini counterpart.
+   */
   readonly contextWindow?: number
   /** Claude output cap applied when a caller omits one; defaults to 32000. */
   readonly maxTokens?: number
@@ -115,16 +119,24 @@ export const Config: Schema<Config> = Schema.object({
 })
 
 /** Validated configuration plus the file it was read from. */
-export interface ResolvedConfig {
+interface ResolvedConfig {
   readonly anthropic: VertexAnthropicConfig
   readonly gemini: GeminiAdapterConfig
   /** Absolute path of the service-account file, for the mount log line. */
   readonly serviceAccountFile: string
 }
 
-/** A positive integer, or a failure naming the field. */
+/**
+ * A positive integer, or a failure naming the field.
+ *
+ * The exported {@link Config} schema already enforces this — `.step(1).min(1)`
+ * — for every row the loader validates, which production always is. What is
+ * left is the guard for a caller that hands `resolveConfig` a plain object
+ * directly, so a `0` or a fraction still fails loudly here rather than becoming
+ * a request body the provider refuses.
+ */
 function positiveInteger(value: number, field: string): number {
-  if (!Number.isInteger(value) || value < 1) {
+  if (value < 1) {
     throw new Error(`google-vertex: ${field} must be a positive integer, got ${String(value)}`)
   }
   return value
@@ -203,15 +215,14 @@ export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = proc
     : config.geminiModels
   const geminiModels: readonly GeminiModel[] = geminiIds.map((id) => {
     if (id.trim().length === 0) throw new Error('google-vertex: geminiModels ids must be non-empty strings')
-    // A configured id keeps the built-in entry's capacities when it is one of
-    // them, so the tighter Vertex limits stay applied to the models they belong
-    // to; an unfamiliar id gets the family defaults.
-    return DEFAULT_GEMINI_MODELS.find(model => model.id === id)
-      ?? { id, name: id, contextWindow: DEFAULT_GEMINI_MODELS[0]?.contextWindow ?? 1_048_576, maxTokens: DEFAULT_GEMINI_MODELS[0]?.maxTokens ?? 65_535 }
+    // A configured id keeps the built-in entry's wording when it is one of them;
+    // every model serves the same capacities, which live on the wire config.
+    return DEFAULT_GEMINI_MODELS.find(model => model.id === id) ?? { id, name: id }
   })
 
   // A bound `setTimeout` would clamp to 1ms, and zero or a fraction of a
-  // millisecond is a typo rather than a policy.
+  // millisecond is a typo rather than a policy. The schema already bounds and
+  // defaults this for a validated row; this guard is for a direct caller.
   const streamIdleTimeoutMs = config.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
   if (!Number.isFinite(streamIdleTimeoutMs) || streamIdleTimeoutMs <= 0 || streamIdleTimeoutMs > MAX_TIMER_DELAY_MS) {
     throw new Error(
@@ -236,7 +247,7 @@ export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = proc
       project,
       location,
       models: geminiModels,
-      maxTokens: DEFAULT_GEMINI_MODELS[0]?.maxTokens ?? 65_535,
+      maxTokens: DEFAULT_GEMINI_MAX_TOKENS,
       streamIdleTimeoutMs,
     },
   }

@@ -9,14 +9,14 @@
  * the harness can turn an RSA key into a bearer token on the request path.
  *
  * Everything here is pure enough to test without a network: the token endpoint
- * transport, the clock, and the scope are injectable.
+ * transport and the clock are injectable. The scope every request needs and the
+ * early-refresh margin are fixed, because nothing has ever needed to vary them:
+ * one Vertex route and one margin are what this plugin talks to.
  *
  * @module dsh-google-vertex/auth
  */
 /** Scope every Vertex AI request needs; the token carries nothing narrower. */
 export declare const CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
-/** Token endpoint a service-account file names; this is the public default. */
-export declare const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
 /** Injectable transport, so tests never touch the network. */
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 /** The fields of a service-account JSON this module reads. */
@@ -78,15 +78,11 @@ export declare function loadServiceAccount(path: string): ServiceAccount;
  */
 export declare function signedAssertion(account: ServiceAccount, nowSeconds: number, scope: string): string;
 /** Options for {@link ServiceAccountTokens}. */
-export interface TokenSourceOptions {
+interface TokenSourceOptions {
     /** Transport; defaults to the process `fetch`. */
     fetch?: FetchLike;
     /** Clock in milliseconds; defaults to `Date.now`. */
     now?: () => number;
-    /** OAuth scope; defaults to {@link CLOUD_PLATFORM_SCOPE}. */
-    scope?: string;
-    /** Early-refresh margin in milliseconds. */
-    refreshMarginMs?: number;
 }
 /**
  * Access tokens for one service account, refreshed on demand.
@@ -98,7 +94,7 @@ export declare class ServiceAccountTokens {
     #private;
     /**
      * @param account - the parsed service-account credentials.
-     * @param options - injectable transport, clock, scope, and refresh margin.
+     * @param options - injectable transport and clock.
      */
     constructor(account: ServiceAccount, options?: TokenSourceOptions);
     /**
@@ -112,3 +108,4 @@ export declare class ServiceAccountTokens {
      */
     get(signal?: AbortSignal): Promise<string>;
 }
+export {};

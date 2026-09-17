@@ -13,10 +13,11 @@
  * @module dsh-google-vertex/gemini-adapter
  */
 
-import { attributionHeaders } from '@deepseek-ai/dsh-llm'
-import { credentialFailure, errorBody, errorFinish, idleTimeoutFailure, transportFinish } from './adapter.ts'
+import {
+  streamVertex,
+  VertexPublisherAdapter,
+} from './adapter.ts'
 import type { TokenProvider } from './adapter.ts'
-import { ServiceAccountTokens } from './auth.ts'
 import type { FetchLike, ServiceAccount } from './auth.ts'
 import {
   buildGeminiRequest,
@@ -27,16 +28,7 @@ import {
   type GeminiModel,
   type GeminiWireConfig,
 } from './gemini.ts'
-import type {
-  GenerateOptions,
-  LlmAdapterLike,
-  LlmModelInfo,
-  LlmProviderInfo,
-  LlmResolvedModelInfo,
-  PreparedAdapterCall,
-  StreamChunk,
-} from './host.ts'
-import { failureForStatus, streamSseRecords } from './wire.ts'
+import type { GenerateOptions, StreamChunk } from './host.ts'
 
 /** Resolved adapter configuration for the Gemini route. */
 export interface GeminiAdapterConfig extends GeminiWireConfig {
@@ -47,17 +39,22 @@ export interface GeminiAdapterConfig extends GeminiWireConfig {
 }
 
 /**
+ * The capacities every Gemini model serves, wherever the id came from. A
+ * catalog entry carries no capacities of its own until a model actually needs
+ * different ones.
+ */
+const GEMINI_CAPACITY = {
+  contextWindow: DEFAULT_GEMINI_CONTEXT_WINDOW,
+  defaultMaxTokens: DEFAULT_GEMINI_MAX_TOKENS,
+} as const
+
+/**
  * Duck-typed adapter over Vertex's Gemini publisher endpoint.
  *
- * `LlmRuntime` reaches adapters through plain method calls, so this object needs
- * no harness base class; the plugin's only runtime `@deepseek-ai/*` dependency
- * is `@deepseek-ai/dsh-llm`'s pure `attributionHeaders()` helper.
+ * The metadata face and the streaming pipeline are the shared ones; this class
+ * supplies the Gemini catalog, wording, endpoint, body, and translator.
  */
-export class GoogleVertexGeminiAdapter implements LlmAdapterLike {
-  readonly #config: GeminiAdapterConfig
-  readonly #tokens: TokenProvider
-  readonly #fetch: FetchLike
-
+export class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<GeminiAdapterConfig> {
   /**
    * @param config - the resolved configuration this adapter serves.
    * @param options - transport and token-source overrides for tests.
@@ -66,47 +63,13 @@ export class GoogleVertexGeminiAdapter implements LlmAdapterLike {
     config: GeminiAdapterConfig,
     options: { fetch?: FetchLike; tokens?: TokenProvider } = {},
   ) {
-    this.#config = config
-    this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
-    this.#tokens = options.tokens ?? new ServiceAccountTokens(config.serviceAccount, { fetch: this.#fetch })
-  }
-
-  /** {@inheritDoc LlmAdapterLike.providerInfo} */
-  providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: 'Google Vertex AI (Gemini)' }
-  }
-
-  /** No provider-owned retry policy; the harness defaults classify Vertex's own 429s. */
-  providerRetryPolicy(_provider: string): undefined {
-    return undefined
-  }
-
-  /** No route charges visual tokens: this adapter is text-only. */
-  imageRequestPricing(_provider: string, _model: string): undefined {
-    return undefined
-  }
-
-  /** The configured Gemini catalog, in configuration order. */
-  listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return Promise.resolve(this.#config.models.map(model => this.#info(provider, model.id)))
-  }
-
-  /** {@inheritDoc LlmAdapterLike.resolveModel} */
-  resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    const known = this.#config.models.find(entry => entry.id === model)
-    return Promise.resolve({
-      ...this.#info(provider, model),
-      context: { contextWindow: known?.contextWindow ?? DEFAULT_GEMINI_CONTEXT_WINDOW },
-      defaultMaxTokens: known?.maxTokens ?? DEFAULT_GEMINI_MAX_TOKENS,
-    })
-  }
-
-  /** {@inheritDoc LlmAdapterLike.prepareCall} */
-  async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall> {
-    return {
-      model: await this.resolveModel(provider, model, signal),
-      stream: (options: GenerateOptions) => this.stream(options),
-    }
+    super({
+      providerName: 'Google Vertex AI (Gemini)',
+      catalog: config.models,
+      capacityFor: () => GEMINI_CAPACITY,
+      describe: (_name, row) =>
+        `Google Gemini on Vertex AI (project ${row.project}, ${row.location}).`,
+    }, config, options)
   }
 
   /**
@@ -116,148 +79,18 @@ export class GoogleVertexGeminiAdapter implements LlmAdapterLike {
    * rides the last content chunk. A body that ends without one is therefore a
    * truncated response, which is what {@link GeminiStreamTranslator.sawFinish}
    * distinguishes — unless an in-band error or the idle watchdog already ended
-   * the turn.
-   *
-   * Every read is bounded by `streamIdleTimeoutMs`: a provider that stops
-   * sending is a terminal `TIMEOUT` rather than a turn that never ends. The
-   * watchdog owns its own controller so the stalled read can be torn down; the
-   * caller's signal is combined with it when present.
+   * the turn. The shared pump owns the watchdog, the token mint, and the SSE
+   * loop; this route's finish is built at the end of the body.
    */
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const model = options.model.length > 0 ? options.model : this.#config.models[0]?.id ?? ''
-    const known = this.#config.models.find(entry => entry.id === model)
-    const consumer = new AbortController()
-    const signal = options.signal === undefined
-      ? consumer.signal
-      : AbortSignal.any([options.signal, consumer.signal])
-    let idleTimedOut = false
-    let idleTimer: NodeJS.Timeout | undefined
-    const armIdle = (): void => {
-      if (idleTimer !== undefined) clearTimeout(idleTimer)
-      idleTimer = setTimeout(() => {
-        idleTimedOut = true
-        consumer.abort('google-vertex: stream idle timeout')
-      }, this.#config.streamIdleTimeoutMs)
-    }
-    const clearIdle = (): void => {
-      if (idleTimer !== undefined) clearTimeout(idleTimer)
-      idleTimer = undefined
-    }
-
-    let token: string
-    armIdle()
-    try {
-      // The token mint is a network call too: an unbounded one stalls the same
-      // way a stalled body does.
-      token = await this.#tokens.get(signal)
-    } catch (error) {
-      if (idleTimedOut) {
-        yield errorFinish(idleTimeoutFailure(this.#config.streamIdleTimeoutMs))
-        return
-      }
-      if (options.signal?.aborted === true) {
-        yield transportFinish(options, error)
-        return
-      }
-      yield errorFinish(credentialFailure(error))
-      return
-    } finally {
-      clearIdle()
-    }
-
-    let response: Response
-    armIdle()
-    try {
-      response = await this.#fetch(geminiEndpointFor(this.#config.project, this.#config.location, model), {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'accept': 'text/event-stream',
-          ...attributionHeaders(),
-          'authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(buildGeminiRequest(options, {
-          project: this.#config.project,
-          location: this.#config.location,
-          maxTokens: known?.maxTokens ?? this.#config.maxTokens,
-        })),
-        signal,
-      })
-    } catch (error) {
-      if (idleTimedOut) {
-        yield errorFinish(idleTimeoutFailure(this.#config.streamIdleTimeoutMs))
-        return
-      }
-      yield transportFinish(options, error)
-      return
-    } finally {
-      clearIdle()
-    }
-
-    if (!response.ok) {
-      yield errorFinish(failureForStatus(
-        response.status,
-        await errorBody(response),
-        `model "${model}" in ${this.#config.location}`,
-      ))
-      return
-    }
-    if (response.body === null) {
-      yield errorFinish({ message: 'google-vertex: response carried no body', code: 'TRANSPORT' })
-      return
-    }
-
-    const translator = new GeminiStreamTranslator(model)
-    try {
-      const events = streamSseRecords(
-        response.body as unknown as AsyncIterable<Uint8Array>,
-        { armIdle, clearIdle },
-      )
-      for await (const event of events) yield * translator.handle(event)
-    } catch (error) {
-      // An in-band error already ended the turn, so a fault while closing the
-      // body cannot add a second terminal chunk.
-      if (translator.failed) return
-      if (idleTimedOut) {
-        yield errorFinish(idleTimeoutFailure(this.#config.streamIdleTimeoutMs))
-        return
-      }
-      yield transportFinish(options, error)
-      return
-    } finally {
-      clearIdle()
-    }
-
-    // Exactly one terminal chunk leaves this stream: an in-band provider error
-    // and a watchdog expiry already yielded theirs.
-    if (translator.failed) return
-    if (!translator.sawFinish) {
-      if (idleTimedOut) {
-        yield errorFinish(idleTimeoutFailure(this.#config.streamIdleTimeoutMs))
-        return
-      }
-      if (options.signal?.aborted === true) {
-        yield transportFinish(options, options.signal?.reason)
-        return
-      }
-      yield errorFinish({
-        message: `google-vertex: model "${model}" stream ended before a finish reason`,
-        code: 'TRANSPORT',
-      })
-      return
-    }
-    yield * translator.finish()
-  }
-
-  /** Display metadata for one model id, named from the catalog when known. */
-  #info(provider: string, model: string): LlmModelInfo {
-    const known = this.#config.models.find(entry => entry.id === model)
-    return {
-      provider,
-      id: model,
-      name: known?.name ?? model,
-      description: `Google Gemini on Vertex AI (project ${this.#config.project}, ${this.#config.location}).`,
-      inputModalities: ['text'],
-    }
+    yield * streamVertex(this.config, options, this.fetch, this.tokens, model => new GeminiStreamTranslator(model), {
+      endpoint: (model, config) => geminiEndpointFor(config.project, config.location, model),
+      body: (request, _model, config) => buildGeminiRequest(request, {
+        project: config.project,
+        location: config.location,
+        maxTokens: config.maxTokens,
+      }),
+      truncatedMessage: model => `google-vertex: model "${model}" stream ended before a finish reason`,
+    })
   }
 }

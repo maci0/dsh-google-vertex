@@ -12,10 +12,11 @@
  *
  * @module dsh-google-vertex/gemini-adapter
  */
+import { VertexPublisherAdapter } from './adapter.ts';
 import type { TokenProvider } from './adapter.ts';
 import type { FetchLike, ServiceAccount } from './auth.ts';
 import { type GeminiModel, type GeminiWireConfig } from './gemini.ts';
-import type { GenerateOptions, LlmAdapterLike, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, PreparedAdapterCall, StreamChunk } from './host.ts';
+import type { GenerateOptions, StreamChunk } from './host.ts';
 /** Resolved adapter configuration for the Gemini route. */
 export interface GeminiAdapterConfig extends GeminiWireConfig {
     readonly serviceAccount: ServiceAccount;
@@ -26,12 +27,10 @@ export interface GeminiAdapterConfig extends GeminiWireConfig {
 /**
  * Duck-typed adapter over Vertex's Gemini publisher endpoint.
  *
- * `LlmRuntime` reaches adapters through plain method calls, so this object needs
- * no harness base class; the plugin's only runtime `@deepseek-ai/*` dependency
- * is `@deepseek-ai/dsh-llm`'s pure `attributionHeaders()` helper.
+ * The metadata face and the streaming pipeline are the shared ones; this class
+ * supplies the Gemini catalog, wording, endpoint, body, and translator.
  */
-export declare class GoogleVertexGeminiAdapter implements LlmAdapterLike {
-    #private;
+export declare class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<GeminiAdapterConfig> {
     /**
      * @param config - the resolved configuration this adapter serves.
      * @param options - transport and token-source overrides for tests.
@@ -40,18 +39,6 @@ export declare class GoogleVertexGeminiAdapter implements LlmAdapterLike {
         fetch?: FetchLike;
         tokens?: TokenProvider;
     });
-    /** {@inheritDoc LlmAdapterLike.providerInfo} */
-    providerInfo(provider: string): LlmProviderInfo;
-    /** No provider-owned retry policy; the harness defaults classify Vertex's own 429s. */
-    providerRetryPolicy(_provider: string): undefined;
-    /** No route charges visual tokens: this adapter is text-only. */
-    imageRequestPricing(_provider: string, _model: string): undefined;
-    /** The configured Gemini catalog, in configuration order. */
-    listModels(provider: string): Promise<readonly LlmModelInfo[]>;
-    /** {@inheritDoc LlmAdapterLike.resolveModel} */
-    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
-    /** {@inheritDoc LlmAdapterLike.prepareCall} */
-    prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;
     /**
      * Stream one completion through `:streamGenerateContent?alt=sse`.
      *
@@ -59,12 +46,8 @@ export declare class GoogleVertexGeminiAdapter implements LlmAdapterLike {
      * rides the last content chunk. A body that ends without one is therefore a
      * truncated response, which is what {@link GeminiStreamTranslator.sawFinish}
      * distinguishes — unless an in-band error or the idle watchdog already ended
-     * the turn.
-     *
-     * Every read is bounded by `streamIdleTimeoutMs`: a provider that stops
-     * sending is a terminal `TIMEOUT` rather than a turn that never ends. The
-     * watchdog owns its own controller so the stalled read can be torn down; the
-     * caller's signal is combined with it when present.
+     * the turn. The shared pump owns the watchdog, the token mint, and the SSE
+     * loop; this route's finish is built at the end of the body.
      */
     stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
 }

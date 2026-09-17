@@ -25,12 +25,17 @@ export declare const DEFAULT_GEMINI_CONTEXT_WINDOW = 1048576;
  * accepted value is one less.
  */
 export declare const DEFAULT_GEMINI_MAX_TOKENS = 65535;
-/** One advertised Gemini model with the capacities Vertex enforces. */
+/**
+ * One advertised Gemini model. Capacities are not per model: every current
+ * Gemini model serves the same context window and the same output cap, and a
+ * configured catalog names ids only, so nothing can differ them. The pair is
+ * {@link DEFAULT_GEMINI_CONTEXT_WINDOW} and {@link DEFAULT_GEMINI_MAX_TOKENS};
+ * give a model its own capacities when one actually differs, and the adapter's
+ * capacity lookup will read them from an entry here again.
+ */
 export interface GeminiModel {
     readonly id: string;
     readonly name: string;
-    readonly contextWindow: number;
-    readonly maxTokens: number;
 }
 /**
  * Gemini models the global endpoint serves, in picker order. Ids are the
@@ -46,19 +51,19 @@ export declare const DEFAULT_GEMINI_MODELS: readonly GeminiModel[];
  */
 export declare function geminiEndpointFor(project: string, location: string, model: string): string;
 /** One function call the model requested. */
-export interface GeminiFunctionCall {
+interface GeminiFunctionCall {
     name: string;
     args?: Record<string, unknown>;
     id?: string;
 }
 /** One function result being sent back. */
-export interface GeminiFunctionResponse {
+interface GeminiFunctionResponse {
     name: string;
     id?: string;
     response: Record<string, unknown>;
 }
 /** One content part on the wire. */
-export interface GeminiPart {
+interface GeminiPart {
     text?: string;
     thought?: boolean;
     thoughtSignature?: string;
@@ -71,7 +76,7 @@ export interface GeminiContent {
     parts: GeminiPart[];
 }
 /** One wire tool declaration. */
-export interface GeminiToolDeclaration {
+interface GeminiToolDeclaration {
     name: string;
     description: string;
     parameters: Record<string, unknown>;
@@ -107,12 +112,12 @@ export interface GeminiWireConfig {
  * ("Function call is missing a thought_signature"). Text parts can carry one
  * too, so the entry is kept for both block kinds.
  */
-export interface GeminiReplayBlock {
+interface GeminiReplayBlock {
     readonly type: 'text' | 'tool-call';
     readonly thoughtSignature?: string;
 }
 /** The envelope the harness stores on an assistant message and hands back. */
-export interface GeminiReplayEnvelope {
+interface GeminiReplayEnvelope {
     readonly response: {
         readonly kind: 'google-vertex-gemini';
         readonly version: 1;
@@ -154,7 +159,7 @@ export declare function readGeminiReplay(message: Message, model: string): reado
  */
 export declare function buildGeminiRequest(options: GenerateOptions, config: GeminiWireConfig): GeminiRequestBody;
 /** Raw usage counters as Vertex reports them. */
-export interface GeminiUsageMetadata {
+interface GeminiUsageMetadata {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
     cachedContentTokenCount?: number;
@@ -173,6 +178,10 @@ export interface GeminiUsageMetadata {
 export declare function mapGeminiUsage(usage: GeminiUsageMetadata): TokenUsage;
 /**
  * Map Gemini's finish reason onto the harness vocabulary.
+ *
+ * `STOP`, `OTHER`, and an absent reason all mean the same thing here, and so
+ * does any reason a provider release adds: the turn ended, and only a tool call
+ * in it changes what that is called.
  * @param reason - the `finishReason` Vertex reported.
  * @param sawToolCall - whether the response contained a function call, which
  *   Gemini reports as an ordinary `STOP`.
@@ -203,6 +212,8 @@ export declare class GeminiStreamTranslator {
     get sawFinish(): boolean;
     /** True once an in-band error ended the stream, which `handle` already reported. */
     get failed(): boolean;
+    /** {@inheritDoc StreamTranslatorLike.terminal} */
+    get terminal(): boolean;
     /**
      * Terminal chunks: the closed tail, usage, and the finish reason.
      *
@@ -212,3 +223,4 @@ export declare class GeminiStreamTranslator {
      */
     finish(): StreamChunk[];
 }
+export {};

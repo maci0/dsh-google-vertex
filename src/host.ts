@@ -17,7 +17,7 @@
  */
 
 /** Disposer returned by every host registration. */
-export type Disposable = () => void
+type Disposable = () => void
 
 /** Content block the harness may hand us in request history. */
 export type ContentBlock =
@@ -89,7 +89,7 @@ export type FinishReason =
   | { readonly kind: 'error'; readonly failure: LlmFailure }
 
 /** Adapter-private lossless-JSON state carried by a terminal finish chunk. */
-export interface ReplayEnvelope {
+interface ReplayEnvelope {
   /** Response-level metadata (ids, native stop reason). */
   readonly response: unknown
   /** Per-block metadata, one entry per emitted block in stream order. */
@@ -152,7 +152,7 @@ export interface LlmAdapterLike {
 }
 
 /** The `ctx.llm` seam, narrowed to the one call this plugin makes. */
-export interface LlmServiceLike {
+interface LlmServiceLike {
   registerAdapter(providers: string[], adapter: LlmAdapterLike): Disposable
 }
 

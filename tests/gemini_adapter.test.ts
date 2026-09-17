@@ -13,8 +13,9 @@ import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { VertexAuthError, type FetchLike, type ServiceAccount } from '../src/auth.ts'
 import { DEFAULT_GEMINI_MODELS } from '../src/gemini.ts'
 import { GoogleVertexGeminiAdapter, type GeminiAdapterConfig } from '../src/gemini_adapter.ts'
-import type { GenerateOptions, Message, StreamChunk } from '../src/host.ts'
+import type { GenerateOptions, Message } from '../src/host.ts'
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '../src/wire.ts'
+import { collect, stallingResponse, streamResponse, tokens } from './support.ts'
 
 const CONFIG: GeminiAdapterConfig = {
   serviceAccount: { client_email: 'x@y', private_key: 'unused' } as ServiceAccount,
@@ -31,50 +32,6 @@ const OPTIONS: GenerateOptions = {
   messages: [{ id: '1', role: 'user', content: [{ type: 'text', text: 'hi' }] }],
 }
 
-/** A streaming response whose body arrives in the given chunks. */
-function streamResponse(chunks: readonly string[]): Response {
-  const encoder = new TextEncoder()
-  return new Response(new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
-      controller.close()
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
-}
-
-/** A fixed token source that counts how often it was asked. */
-function tokens(value = 'access-token'): { get(): Promise<string>; calls: () => number } {
-  let calls = 0
-  return {
-    async get() {
-      calls += 1
-      return value
-    },
-    calls: () => calls,
-  }
-}
-
-/** Collect one adapter stream. */
-async function collect(adapter: GoogleVertexGeminiAdapter, options: GenerateOptions = OPTIONS): Promise<StreamChunk[]> {
-  const chunks: StreamChunk[] = []
-  for await (const chunk of adapter.stream(options)) chunks.push(chunk)
-  return chunks
-}
-
-/**
- * A body that sends the given chunks and then stalls until the request signal
- * aborts — which is how a real `fetch` body answers an aborted read.
- */
-function stallingResponse(signal: AbortSignal | null | undefined, before: readonly string[] = []): Response {
-  const encoder = new TextEncoder()
-  return new Response(new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of before) controller.enqueue(encoder.encode(chunk))
-      signal?.addEventListener('abort', () => controller.error(new Error('The operation was aborted')), { once: true })
-    },
-  }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
-}
-
 test('streams Gemini text through the publisher endpoint with the bearer token', async () => {
   const requests: { url: string; init: RequestInit }[] = []
   const fetch: FetchLike = (url, init) => {
@@ -85,7 +42,7 @@ test('streams Gemini text through the publisher endpoint with the bearer token',
     ]))
   }
   const adapter = new GoogleVertexGeminiAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.deepEqual(chunks, [
     { type: 'block-start', index: 0, blockType: 'text' },
@@ -160,7 +117,7 @@ test('a refused request becomes one classified terminal finish', async () => {
     error: { code: 404, message: 'Publisher Model `gemini-nope` was not found or your project does not have access to it.', status: 'NOT_FOUND' },
   }), { status: 404, headers: { 'content-type': 'application/json' } }))
   const adapter = new GoogleVertexGeminiAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.equal(chunks.length, 1)
   const finish = chunks[0]
@@ -174,7 +131,7 @@ test('a body that ends without a finish reason is a transport truncation', async
     'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"partial"}]}}]}\n\n',
   ]))
   const adapter = new GoogleVertexGeminiAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.deepEqual(chunks.at(-1), {
     type: 'finish',
@@ -195,7 +152,7 @@ test('a credential failure never reaches the wire, and abort reports cancellatio
     fetch,
     tokens: { get: () => Promise.reject(new VertexAuthError('AUTH', 'google-vertex: token endpoint refused the service account (HTTP 400)')) },
   })
-  assert.deepEqual(await collect(failing), [{
+  assert.deepEqual(await collect(failing, OPTIONS), [{
     type: 'finish',
     reason: {
       kind: 'error',
@@ -239,7 +196,7 @@ test('an in-band provider error is the one terminal chunk, with the provider cod
   for (const { payload, message, code } of cases) {
     const fetch: FetchLike = () => Promise.resolve(streamResponse([`data: ${payload}\n\n`]))
     const adapter = new GoogleVertexGeminiAdapter(CONFIG, { fetch, tokens: tokens() })
-    const chunks = await collect(adapter)
+    const chunks = await collect(adapter, OPTIONS)
 
     // The error is what ends the stream: no truncation report follows it, and
     // the provider's own message survives.
@@ -256,7 +213,7 @@ test('a stalled stream is one TIMEOUT finish, not a hang', async () => {
     'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"partial"}]}}]}\n\n',
   ]))
   const adapter = new GoogleVertexGeminiAdapter({ ...CONFIG, streamIdleTimeoutMs: 20 }, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.deepEqual(chunks.slice(0, 2), [
     { type: 'block-start', index: 0, blockType: 'text' },
@@ -278,7 +235,7 @@ test('an in-band error followed by a stalled body still yields one terminal chun
     'data: {"error":{"code":503,"message":"The service is currently unavailable."}}\n\n',
   ]))
   const adapter = new GoogleVertexGeminiAdapter({ ...CONFIG, streamIdleTimeoutMs: 20 }, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.deepEqual(chunks, [{
     type: 'finish',
@@ -294,13 +251,13 @@ test('a stream that reported no counters emits no usage chunk', async () => {
     'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Hi"}]},"finishReason":"STOP"}]}\n\n',
   ]))
   const adapter = new GoogleVertexGeminiAdapter(CONFIG, { fetch, tokens: tokens() })
-  const chunks = await collect(adapter)
+  const chunks = await collect(adapter, OPTIONS)
 
   assert.equal(chunks.some(chunk => chunk.type === 'usage'), false)
   assert.equal(chunks.at(-1)?.type, 'finish')
 })
 
-test('model metadata comes from the catalog with Vertex capacities', async () => {
+test('model metadata comes from the catalog and reports the family capacities', async () => {
   const adapter = new GoogleVertexGeminiAdapter(CONFIG, { fetch: globalThis.fetch as FetchLike, tokens: tokens() })
 
   const listed = await adapter.listModels('google-vertex-gemini')

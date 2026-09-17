@@ -16,7 +16,7 @@
  * @module dsh-google-vertex/host
  */
 /** Disposer returned by every host registration. */
-export type Disposable = () => void;
+type Disposable = () => void;
 /** Content block the harness may hand us in request history. */
 export type ContentBlock = {
     readonly type: 'text';
@@ -101,7 +101,7 @@ export type FinishReason = {
     readonly failure: LlmFailure;
 };
 /** Adapter-private lossless-JSON state carried by a terminal finish chunk. */
-export interface ReplayEnvelope {
+interface ReplayEnvelope {
     /** Response-level metadata (ids, native stop reason). */
     readonly response: unknown;
     /** Per-block metadata, one entry per emitted block in stream order. */
@@ -178,7 +178,7 @@ export interface LlmAdapterLike {
     stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
 }
 /** The `ctx.llm` seam, narrowed to the one call this plugin makes. */
-export interface LlmServiceLike {
+interface LlmServiceLike {
     registerAdapter(providers: string[], adapter: LlmAdapterLike): Disposable;
 }
 /** The host context slice this plugin touches. */
@@ -195,3 +195,4 @@ export interface HostContext {
      */
     get?(name: string): unknown;
 }
+export {};

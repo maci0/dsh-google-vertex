@@ -14,9 +14,7 @@
  *
  * @module dsh-google-vertex/wire
  */
-import type { FinishReason, GenerateOptions, LlmFailure, StreamChunk, TokenUsage } from './host.ts';
-/** Vertex's Anthropic API version marker; required in every request body. */
-export declare const VERTEX_ANTHROPIC_VERSION = "vertex-2023-10-16";
+import type { ContentBlock, FinishReason, GenerateOptions, LlmFailure, StreamChunk, TokenUsage } from './host.ts';
 /** Endpoint host used when no region is configured. */
 export declare const DEFAULT_LOCATION = "global";
 /**
@@ -43,17 +41,17 @@ export declare function endpointOrigin(location: string): string;
  */
 export declare function endpointFor(project: string, location: string, model: string): string;
 /** Cache marker Vertex honours on tools, system blocks, and message blocks. */
-export interface CacheControl {
+interface CacheControl {
     readonly type: 'ephemeral';
 }
 /** One text block on the wire. */
-export interface WireTextBlock {
+interface WireTextBlock {
     type: 'text';
     text: string;
     cache_control?: CacheControl;
 }
 /** One tool-result block on the wire. */
-export interface WireToolResultBlock {
+interface WireToolResultBlock {
     type: 'tool_result';
     tool_use_id: string;
     content: string;
@@ -61,7 +59,7 @@ export interface WireToolResultBlock {
     cache_control?: CacheControl;
 }
 /** One tool-use block on the wire. */
-export interface WireToolUseBlock {
+interface WireToolUseBlock {
     type: 'tool_use';
     id: string;
     name: string;
@@ -69,21 +67,21 @@ export interface WireToolUseBlock {
     cache_control?: CacheControl;
 }
 /** Any wire content block this adapter emits. */
-export type WireContentBlock = WireTextBlock | WireToolResultBlock | WireToolUseBlock;
+type WireContentBlock = WireTextBlock | WireToolResultBlock | WireToolUseBlock;
 /** One wire message. */
 export interface WireMessage {
     role: 'user' | 'assistant';
     content: WireContentBlock[];
 }
 /** One wire tool declaration. */
-export interface WireTool {
+interface WireTool {
     name: string;
     description: string;
     input_schema: Record<string, unknown>;
     cache_control?: CacheControl;
 }
 /** The request body `:streamRawPredict` accepts. */
-export interface WireRequestBody {
+interface WireRequestBody {
     anthropic_version: string;
     stream: true;
     max_tokens: number;
@@ -101,6 +99,13 @@ export interface VertexWireConfig {
     maxTokens: number;
 }
 /**
+ * Flatten nested tool-result content to the text Vertex accepts.
+ *
+ * The Gemini route sends a tool result the same way, so this is exported rather
+ * than written twice.
+ */
+export declare function resultText(blocks: readonly ContentBlock[]): string;
+/**
  * Build the request body for one model call.
  *
  * History is projected block by block, consecutive same-role messages are
@@ -114,7 +119,7 @@ export interface VertexWireConfig {
  */
 export declare function buildRequestBody(options: GenerateOptions, config: VertexWireConfig): WireRequestBody;
 /** Raw usage counters as Vertex reports them. */
-export interface WireUsage {
+interface WireUsage {
     input_tokens?: number;
     output_tokens?: number;
     cache_read_input_tokens?: number;
@@ -138,6 +143,10 @@ export declare const EMPTY_RESPONSE_CODE = "EMPTY_RESPONSE";
 export declare const QUOTA_EXCEEDED_CODE = "QUOTA";
 /**
  * Map one provider stop reason onto the harness vocabulary.
+ *
+ * `pause_turn` needs no case of its own: it cannot recur here, because this
+ * adapter declares no server-executed tools, so the answer is complete — which
+ * is what the default already reports for any reason the provider adds.
  * @param reason - the `stop_reason` Vertex reported, if any.
  * @returns the harness finish reason.
  */
@@ -196,7 +205,7 @@ export declare class SseBuffer {
     flush(): string | undefined;
 }
 /** Per-read watchdog hooks the shared pump calls around every outstanding read. */
-export interface SsePumpHooks {
+interface SsePumpHooks {
     /** Arm the idle bound for the read about to start. */
     armIdle(): void;
     /** Clear the armed idle bound; called as soon as a read resolves, and on exit. */
@@ -239,4 +248,9 @@ export declare class StreamTranslator {
     handle(event: Record<string, unknown>): StreamChunk[];
     /** True once a terminal event arrived, so the adapter can tell truncation. */
     get done(): boolean;
+    /** {@inheritDoc StreamTranslatorLike.terminal} */
+    get terminal(): boolean;
+    /** {@inheritDoc StreamTranslatorLike.sawFinish} */
+    get sawFinish(): boolean;
 }
+export {};

@@ -62,7 +62,11 @@ export interface Config {
     readonly models?: string[];
     /** Gemini model ids to advertise, replacing the built-in catalog. */
     readonly geminiModels?: string[];
-    /** Claude context window reported for every model; defaults to 200000. */
+    /**
+     * Claude context window reported for every model; defaults to 200000. The
+     * Gemini route reports {@link DEFAULT_GEMINI_CONTEXT_WINDOW} for every model
+     * it serves, which is why this key has no Gemini counterpart.
+     */
     readonly contextWindow?: number;
     /** Claude output cap applied when a caller omits one; defaults to 32000. */
     readonly maxTokens?: number;
@@ -83,7 +87,7 @@ export interface Config {
  */
 export declare const Config: Schema<Config>;
 /** Validated configuration plus the file it was read from. */
-export interface ResolvedConfig {
+interface ResolvedConfig {
     readonly anthropic: VertexAnthropicConfig;
     readonly gemini: GeminiAdapterConfig;
     /** Absolute path of the service-account file, for the mount log line. */
@@ -105,3 +109,4 @@ export declare function resolveConfig(config?: Config, env?: NodeJS.ProcessEnv):
  * @param config - this plugin's row configuration.
  */
 export declare function apply(ctx: HostContext, config?: Config): void;
+export {};
