@@ -1,6 +1,6 @@
 {
   "name": "dsh-google-vertex",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -35,13 +35,27 @@
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
-  "dependencies": {
-    "@deepseek-ai/dsh-launch-environment": "0.1.6-alpha.1",
-    "@deepseek-ai/dsh-llm": "0.1.6-alpha.1",
-    "@deepseek-ai/schemastery": "3.18.2"
+  "peerDependencies": {
+    "@deepseek-ai/dsh-launch-environment": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-launch-environment": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-launch-environment": "0.1.6-alpha.1",
+    "@deepseek-ai/dsh-llm": "0.1.6-alpha.1",
+    "@deepseek-ai/schemastery": "3.18.2",
     "@types/node": "^22.20.2",
     "typescript": "^7.0.2"
   }
