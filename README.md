@@ -29,8 +29,8 @@ Override the row by id in `~/.dsh/profiles/web/cordis.patch.yml`:
 ```yaml
 - id: google-vertex
   config:
-    serviceAccountFile: ~/.secrets/itpc-gcp-global-revenue-claude-8a8e66965fa3.json
-    project: itpc-gcp-global-revenue-claude
+    serviceAccountFile: ~/.secrets/global-claude-project.json
+    project: global-claude-project
     location: global
 ```
 
