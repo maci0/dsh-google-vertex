@@ -123,7 +123,7 @@ records:
     kind: api-key
     env:
       GOOGLE_APPLICATION_CREDENTIALS: /path/to/service-account.json
-      GOOGLE_CLOUD_PROJECT: itpc-gcp-global-revenue-claude
+      GOOGLE_CLOUD_PROJECT: global-claude-project
       GOOGLE_CLOUD_LOCATION: global
 ```
 
