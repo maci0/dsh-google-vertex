@@ -9,6 +9,8 @@ Nothing is copied into the harness credential store: the file is read once at mo
 - Two provider routes from one configuration row — `google-vertex-anthropic` for Claude and `google-vertex-gemini` for Gemini — both in the Web model picker.
 - Service-account auth with no API key: a path in config, or `GOOGLE_APPLICATION_CREDENTIALS`.
 - Streaming with tool calling on both routes. Claude emits raw JSON argument deltas; Gemini emits complete function calls and replays the thought signature Gemini 3 requires.
+- Catalogs discovered from Vertex at runtime — Gemini from the publishers catalog API, Claude by probing its candidates — behind a five-minute cache, with the built-in list as the fallback when the provider cannot be reached.
+- A **Refresh models** control on this plugin's row page, which drops both caches and re-reads the model picker without restarting `dsh web`.
 - Claude prompt-cache breakpoints on tools, system, and the final conversation block, with cache read/write counts reported as usage.
 - Failure codes the harness can act on: `429` → `RATE_LIMIT`, `5xx` → `SERVER`, `RESOURCE_EXHAUSTED` → `QUOTA`, oversized → `CONTEXT_WINDOW_EXCEEDED`, a stalled stream → `TIMEOUT`.
 - Environment fallbacks for the credential, project, and region.
@@ -83,6 +85,12 @@ The Gemini cap is one below Vertex's own ceiling on purpose: `maxOutputTokens: 6
 
 Ids are Vertex's aliases, so a promoted release needs no edit here. Both catalogs are overridable from configuration for a deployment that pins dated versions.
 
+### Discovery and refresh
+
+The lists above are the fallback, not the whole catalog. Gemini models are read from Vertex's `publishers/google/models` catalog API, and each Claude id above is probed against the project and region — only a `404` removes one. The result is cached for five minutes so opening the model picker is not a network call.
+
+The picker re-reads that catalog when the host says a model input changed, so a model Google published a minute ago stays invisible until then. This plugin's row page carries the control that forces it: open **Plugins** in the sidebar, open the `dsh-google-vertex` bundle, and configure the `google-vertex` row. **Refresh models** drops both cached catalogs and makes the picker re-read them from this process. The card records the last manual refresh in its own `google-vertex` settings namespace, and the write is also the signal — a browser half has no other channel to the host.
+
 ## Try it
 
 1. Restart `dsh web`, then open a session.
@@ -137,9 +145,9 @@ npm run build      # tsc -p tsconfig.build.json → lib/index.js + lib/types/
 npm run typecheck  # tsc -p tsconfig.json
 ```
 
-The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `npm run build` before it takes effect. This author's web profile installs the package as `link:/home/maci/dsh-plugins/dsh-google-vertex`, so a local edit plus that build is live after a `dsh web` restart.
+The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `npm run build` before it takes effect. A profile that installs the package as a local link (`dsh plugin --profile web add link:/path/to/dsh-google-vertex`) picks up a local edit plus that build after a `dsh web` restart; a profile that installs it from a git spec needs the commit pushed and `dsh plugin --profile web update dsh-google-vertex` instead. `lib/client.js` is the exception either way: the browser half is authored directly as plain JavaScript in the client module loader's factory format and is not produced by `tsc`.
 
-Coverage: the signed assertion, token caching and refresh, both auth failure classes, request projection, cache breakpoints, Gemini request projection with signature replay, SSE framing across split chunks, every terminal finish class — including the stream idle bound and an in-band provider error envelope — usage reported only when the provider reported it, and configuration validation. A real Cordis `Context` mount proves both routes are registered and withdrawn with the fiber, and that the launch-environment snapshot is the fallback source.
+Coverage: the signed assertion, token caching and refresh, both auth failure classes, request projection, cache breakpoints, Gemini request projection with signature replay, SSE framing across split chunks, every terminal finish class — including the stream idle bound and an in-band provider error envelope — usage reported only when the provider reported it, and configuration validation. A real Cordis `Context` mount proves both routes are registered and withdrawn with the fiber, that the launch-environment snapshot is the fallback source, and that the plugin's settings change drops both cached catalogs. The browser half is evaluated from `lib/client.js` through the module loader's own registration format, which is how its slot, its Refresh control, and its write are covered without a browser.
 
 Requires Node `^22.19.0 || >=24.0.0`.
 

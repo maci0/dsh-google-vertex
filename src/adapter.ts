@@ -27,6 +27,7 @@
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { ServiceAccountTokens, VertexAuthError } from './auth.ts'
 import type { FetchLike, ServiceAccount } from './auth.ts'
+import { ModelCache } from './discovery.ts'
 import type {
   GenerateOptions,
   LlmAdapterLike,
@@ -350,21 +351,25 @@ export abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> impl
   readonly #config: C
   readonly #tokens: TokenProvider
   readonly #fetch: FetchLike
+  readonly #modelCache: ModelCache<VertexModel>
+  readonly #discover: (() => Promise<readonly VertexModel[]>) | undefined
 
   /**
    * @param metadata - display name, catalog, capacities, and description text.
    * @param config - the resolved configuration this adapter serves.
-   * @param options - transport and token-source overrides for tests.
+   * @param options - transport, token-source, and discovery overrides.
    */
   constructor(
     metadata: AdapterMetadata<C>,
     config: C,
-    options: { fetch?: FetchLike; tokens?: TokenProvider } = {},
+    options: { fetch?: FetchLike; tokens?: TokenProvider; discover?: () => Promise<readonly VertexModel[]> } = {},
   ) {
     this.#metadata = metadata
     this.#config = config
     this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
     this.#tokens = options.tokens ?? new ServiceAccountTokens(config.serviceAccount, { fetch: this.#fetch })
+    this.#discover = options.discover
+    this.#modelCache = new ModelCache(metadata.catalog)
   }
 
   /** The config this adapter serves, for the stream pipeline below. */
@@ -405,9 +410,24 @@ export abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> impl
     return undefined
   }
 
-  /** The configured catalog, in configuration order. */
-  listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return Promise.resolve(this.#metadata.catalog.map(model => this.#info(provider, model.id)))
+  /**
+   * The current model catalog, fetched from the provider when discovery is
+   * configured, falling back to the static catalog on failure.
+   *
+   * The result is cached with a five-minute TTL so the model picker does
+   * not make a network call on every open.
+   */
+  async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    const models = await this.#modelCache.get(this.#discover)
+    return models.map(model => this.#info(provider, model.id, model.name))
+  }
+
+  /**
+   * Drop the cached catalog, so the next `listModels` re-discovers from the
+   * provider. Both adapters answer the plugin's manual refresh with this.
+   */
+  invalidateModels(): void {
+    this.#modelCache.invalidate()
   }
 
   /** {@inheritDoc LlmAdapterLike.resolveModel} */
@@ -431,10 +451,10 @@ export abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> impl
   /** Stream one completion through this route's publisher endpoint. */
   abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 
-  /** Display metadata for one model id, named from the catalog when known. */
-  #info(provider: string, model: string): LlmModelInfo {
+  /** Display metadata for one model id, named from the catalog or the given name. */
+  #info(provider: string, model: string, overrideName?: string): LlmModelInfo {
     const known = this.#metadata.catalog.find(entry => entry.id === model)
-    const name = known?.name ?? model
+    const name = overrideName ?? known?.name ?? model
     return {
       provider,
       id: model,
@@ -455,11 +475,11 @@ export abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> impl
 export class GoogleVertexAnthropicAdapter extends VertexPublisherAdapter<VertexAnthropicConfig> {
   /**
    * @param config - the resolved configuration this adapter serves.
-   * @param options - transport and token-source overrides for tests.
+   * @param options - transport, token-source, and discovery overrides for tests.
    */
   constructor(
     config: VertexAnthropicConfig,
-    options: { fetch?: FetchLike; tokens?: TokenProvider } = {},
+    options: { fetch?: FetchLike; tokens?: TokenProvider; discover?: () => Promise<readonly VertexModel[]> } = {},
   ) {
     super({
       providerName: 'Google Vertex AI (Anthropic)',

@@ -155,11 +155,12 @@ export declare abstract class VertexPublisherAdapter<C extends VertexAdapterConf
     /**
      * @param metadata - display name, catalog, capacities, and description text.
      * @param config - the resolved configuration this adapter serves.
-     * @param options - transport and token-source overrides for tests.
+     * @param options - transport, token-source, and discovery overrides.
      */
     constructor(metadata: AdapterMetadata<C>, config: C, options?: {
         fetch?: FetchLike;
         tokens?: TokenProvider;
+        discover?: () => Promise<readonly VertexModel[]>;
     });
     /** The config this adapter serves, for the stream pipeline below. */
     protected get config(): C;
@@ -181,8 +182,19 @@ export declare abstract class VertexPublisherAdapter<C extends VertexAdapterConf
     providerRetryPolicy(_provider: string): undefined;
     /** No route charges visual tokens: these adapters are text-only. */
     imageRequestPricing(_provider: string, _model: string): undefined;
-    /** The configured catalog, in configuration order. */
+    /**
+     * The current model catalog, fetched from the provider when discovery is
+     * configured, falling back to the static catalog on failure.
+     *
+     * The result is cached with a five-minute TTL so the model picker does
+     * not make a network call on every open.
+     */
     listModels(provider: string): Promise<readonly LlmModelInfo[]>;
+    /**
+     * Drop the cached catalog, so the next `listModels` re-discovers from the
+     * provider. Both adapters answer the plugin's manual refresh with this.
+     */
+    invalidateModels(): void;
     /** {@inheritDoc LlmAdapterLike.resolveModel} */
     resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;
     /** {@inheritDoc LlmAdapterLike.prepareCall} */
@@ -200,11 +212,12 @@ export declare abstract class VertexPublisherAdapter<C extends VertexAdapterConf
 export declare class GoogleVertexAnthropicAdapter extends VertexPublisherAdapter<VertexAnthropicConfig> {
     /**
      * @param config - the resolved configuration this adapter serves.
-     * @param options - transport and token-source overrides for tests.
+     * @param options - transport, token-source, and discovery overrides for tests.
      */
     constructor(config: VertexAnthropicConfig, options?: {
         fetch?: FetchLike;
         tokens?: TokenProvider;
+        discover?: () => Promise<readonly VertexModel[]>;
     });
     /**
      * Stream one completion through `:streamRawPredict`.

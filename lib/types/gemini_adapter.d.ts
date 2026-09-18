@@ -13,7 +13,7 @@
  * @module dsh-google-vertex/gemini-adapter
  */
 import { VertexPublisherAdapter } from './adapter.ts';
-import type { TokenProvider } from './adapter.ts';
+import type { TokenProvider, VertexModel } from './adapter.ts';
 import type { FetchLike, ServiceAccount } from './auth.ts';
 import { type GeminiModel, type GeminiWireConfig } from './gemini.ts';
 import type { GenerateOptions, StreamChunk } from './host.ts';
@@ -33,11 +33,12 @@ export interface GeminiAdapterConfig extends GeminiWireConfig {
 export declare class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<GeminiAdapterConfig> {
     /**
      * @param config - the resolved configuration this adapter serves.
-     * @param options - transport and token-source overrides for tests.
+     * @param options - transport, token-source, and discovery overrides for tests.
      */
     constructor(config: GeminiAdapterConfig, options?: {
         fetch?: FetchLike;
         tokens?: TokenProvider;
+        discover?: () => Promise<readonly VertexModel[]>;
     });
     /**
      * Stream one completion through `:streamGenerateContent?alt=sse`.

@@ -9,6 +9,12 @@
  * `ctx.llm.listProviders()` and asks each adapter for `listModels()` /
  * `resolveModel()`.
  *
+ * A third: the `google-vertex` settings namespace. Both adapters discover their
+ * catalogs at runtime behind a five-minute cache, and a browser half has no
+ * other way to reach this process, so the namespace's one write — the Refresh
+ * control on this plugin's row page under Plugins — is what drops those caches
+ * on demand.
+ *
  * The credential is the service-account JSON itself: a path in configuration,
  * or `GOOGLE_APPLICATION_CREDENTIALS` in the launch environment. Nothing is
  * copied into the harness credential store, and the file is read once at mount
@@ -26,6 +32,12 @@ export declare const name = "google-vertex";
 export declare const PROVIDER = "google-vertex-anthropic";
 /** The `ctx.llm` route serving Gemini models. */
 export declare const GEMINI_PROVIDER = "google-vertex-gemini";
+/**
+ * Settings namespace the browser half's card edits — the join key between the
+ * two halves. The card registers into `settings.plugin.item` under this key,
+ * and the settings tab pairs the two without knowing what the namespace means.
+ */
+export declare const GOOGLE_VERTEX_SETTINGS_NAMESPACE = "google-vertex";
 /** The one service this plugin needs mounted. */
 export declare const inject: string[];
 /**

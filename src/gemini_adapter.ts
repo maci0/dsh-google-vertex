@@ -17,7 +17,7 @@ import {
   streamVertex,
   VertexPublisherAdapter,
 } from './adapter.ts'
-import type { TokenProvider } from './adapter.ts'
+import type { TokenProvider, VertexModel } from './adapter.ts'
 import type { FetchLike, ServiceAccount } from './auth.ts'
 import {
   buildGeminiRequest,
@@ -57,11 +57,11 @@ const GEMINI_CAPACITY = {
 export class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<GeminiAdapterConfig> {
   /**
    * @param config - the resolved configuration this adapter serves.
-   * @param options - transport and token-source overrides for tests.
+   * @param options - transport, token-source, and discovery overrides for tests.
    */
   constructor(
     config: GeminiAdapterConfig,
-    options: { fetch?: FetchLike; tokens?: TokenProvider } = {},
+    options: { fetch?: FetchLike; tokens?: TokenProvider; discover?: () => Promise<readonly VertexModel[]> } = {},
   ) {
     super({
       providerName: 'Google Vertex AI (Gemini)',
