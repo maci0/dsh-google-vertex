@@ -20,6 +20,8 @@ import type {
 } from './host.ts'
 import { systemParts, takeCounters, toolInput } from './wire-shared.ts'
 import { EMPTY_RESPONSE_CODE, endpointOrigin, failureForEvent, resultText } from './wire.ts'
+import type { VertexWireConfig } from './wire.ts'
+import type { VertexModel } from './adapter.ts'
 
 /** Harness code reported when the provider refused on safety grounds. */
 export const SAFETY_BLOCKED_CODE = 'SAFETY'
@@ -43,23 +45,10 @@ export const DEFAULT_GEMINI_CONTEXT_WINDOW = 1_048_576
 export const DEFAULT_GEMINI_MAX_TOKENS = 65_535
 
 /**
- * One advertised Gemini model. Capacities are not per model: every current
- * Gemini model serves the same context window and the same output cap, and a
- * configured catalog names ids only, so nothing can differ them. The pair is
- * {@link DEFAULT_GEMINI_CONTEXT_WINDOW} and {@link DEFAULT_GEMINI_MAX_TOKENS};
- * give a model its own capacities when one actually differs, and the adapter's
- * capacity lookup will read them from an entry here again.
- */
-export interface GeminiModel {
-  readonly id: string
-  readonly name: string
-}
-
-/**
  * Gemini models the global endpoint serves, in picker order. Ids are the
  * provider's own aliases, so a promoted release needs no edit here.
  */
-export const DEFAULT_GEMINI_MODELS: readonly GeminiModel[] = [
+export const DEFAULT_GEMINI_MODELS: readonly VertexModel[] = [
   { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Vertex)' },
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview (Vertex)' },
   { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash Preview (Vertex)' },
@@ -128,13 +117,6 @@ export interface GeminiRequestBody {
     maxOutputTokens?: number
     stopSequences?: string[]
   }
-}
-
-/** What the Gemini adapter needs to build a request and address the endpoint. */
-export interface GeminiWireConfig {
-  project: string
-  location: string
-  maxTokens: number
 }
 
 /**
@@ -277,7 +259,7 @@ function userParts(message: Message, names: Map<string, string>): GeminiPart[] {
  * @param config - project, location, and default output cap.
  * @returns the wire body.
  */
-export function buildGeminiRequest(options: GenerateOptions, config: GeminiWireConfig): GeminiRequestBody {
+export function buildGeminiRequest(options: GenerateOptions, config: VertexWireConfig): GeminiRequestBody {
   const model = options.model
   const names = toolNames(options.messages)
   const contents: GeminiContent[] = []

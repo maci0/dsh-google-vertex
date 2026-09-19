@@ -36,7 +36,7 @@ export function systemParts(options: GenerateOptions): string[] {
 }
 
 /** A usage counter, ignoring anything the provider sends that is not a number. */
-export function count(value: unknown): number | undefined {
+function count(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 

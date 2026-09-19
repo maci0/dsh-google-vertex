@@ -21,11 +21,11 @@ import {
   SAFETY_BLOCKED_CODE,
   type GeminiContent,
   type GeminiRequestBody,
-  type GeminiWireConfig,
 } from '../src/gemini.ts'
+import type { VertexWireConfig } from '../src/wire.ts'
 import type { Message } from '../src/host.ts'
 
-const CONFIG: GeminiWireConfig = { project: 'p1', location: 'global', maxTokens: DEFAULT_GEMINI_MAX_TOKENS }
+const CONFIG: VertexWireConfig = { project: 'p1', location: 'global', maxTokens: DEFAULT_GEMINI_MAX_TOKENS }
 const MODEL = 'gemini-3.5-flash'
 
 /** The first turn of the assistant content in a built body. */

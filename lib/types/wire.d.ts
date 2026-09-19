@@ -14,6 +14,8 @@
  *
  * @module dsh-google-vertex/wire
  */
+import { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm';
+export { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, QUOTA_EXCEEDED_CODE };
 import type { ContentBlock, FinishReason, GenerateOptions, LlmFailure, StreamChunk, TokenUsage } from './host.ts';
 /** Endpoint host used when no region is configured. */
 export declare const DEFAULT_LOCATION = "global";
@@ -135,12 +137,6 @@ interface WireUsage {
  * @returns disjoint harness counts.
  */
 export declare function mapUsage(usage: WireUsage): TokenUsage;
-/** Harness code reported when the request overflowed the model's context. */
-export declare const CONTEXT_WINDOW_EXCEEDED_CODE = "CONTEXT_WINDOW_EXCEEDED";
-/** Harness code reported when the request produced nothing at all. */
-export declare const EMPTY_RESPONSE_CODE = "EMPTY_RESPONSE";
-/** Harness code reported when a quota or rate cap refused the request. */
-export declare const QUOTA_EXCEEDED_CODE = "QUOTA";
 /**
  * Map one provider stop reason onto the harness vocabulary.
  *
@@ -212,23 +208,43 @@ interface SsePumpHooks {
     clearIdle(): void;
 }
 /**
- * Frame one streaming response body into its parsed SSE payloads.
+ * Frames one streaming response body into SSE records, one transport read at a
+ * time.
  *
  * Both publisher routes answer with the same framing and differ only in what
- * the payload means, so the read loop, the decoder and record buffers, the
- * end-of-body flush, and the trailing `SseBuffer` record live here once. The
- * adapter supplies the idle watchdog and translates each payload.
+ * the payload means, so the read loop, the decoder and record buffers, and the
+ * end-of-body flush live here once. The adapter supplies the idle watchdog.
  *
- * The idle bound covers one outstanding read: it is armed before every read,
+ * This is a reader rather than an async generator because a generator costs a
+ * suspended frame, a promise, and a microtask per framed record; the adapter
+ * drives this directly, so a record is framed, parsed, and translated in the
+ * same turn.
+ *
+ * The idle bound covers one outstanding read: it is armed before every read and
  * cleared as soon as that read resolves — a consumer holding a yielded event is
- * not a stalled provider — and cleared again when the pump exits, whether the
- * body ended, the reader stopped early, or a read threw. A read that throws is
- * left for the adapter to classify.
- * @param body - the response body's byte stream.
- * @param hooks - the caller's idle-watchdog controls.
- * @yields every payload the body framed, in order.
+ * not a stalled provider. A read that throws is left for the caller to
+ * classify.
  */
-export declare function streamSseRecords(body: AsyncIterable<Uint8Array>, hooks: SsePumpHooks): AsyncGenerator<Record<string, unknown>>;
+export declare class SseRecordReader {
+    #private;
+    /**
+     * @param body - the response body's byte stream.
+     * @param hooks - the caller's idle-watchdog controls.
+     */
+    constructor(body: AsyncIterable<Uint8Array>, hooks: SsePumpHooks);
+    /**
+     * Await the next transport read and frame the records it completes.
+     * @returns the records this read completed — an empty array when it completed
+     * none, including the final read that drains the decoder — or undefined once
+     * the body has ended and been drained.
+     */
+    read(): Promise<readonly string[] | undefined>;
+    /**
+     * Release the body iterator, so a caller that stops early tears down the
+     * transport instead of leaving it reading into a buffer nobody drains.
+     */
+    close(): Promise<void>;
+}
 /**
  * Translate Vertex's Anthropic event stream into harness chunks.
  *
@@ -249,4 +265,3 @@ export declare class StreamTranslator {
     /** True once a terminal event arrived, so the adapter can tell truncation. */
     get terminal(): boolean;
 }
-export {};

@@ -42,7 +42,8 @@ import {
   buildRequestBody,
   endpointFor,
   failureForStatus,
-  streamSseRecords,
+  parseSseRecord,
+  SseRecordReader,
   StreamTranslator,
 } from './wire.ts'
 
@@ -66,7 +67,7 @@ export interface TokenProvider {
  * its context window; the model capacities of a Gemini route live on the
  * catalog entries, which is why `models` is typed loosely here.
  */
-export interface VertexAdapterConfig {
+interface VertexAdapterConfig {
   readonly serviceAccount: ServiceAccount
   readonly project: string
   readonly location: string
@@ -85,18 +86,16 @@ export interface VertexAnthropicConfig extends VertexAdapterConfig {
 
 /**
  * What separates one publisher route from the other, as one parameter set: the
- * display name, the catalogue wording, and the capacities `resolveModel`
+ * display name, the description wording, and the capacities `resolveModel`
  * reports for a model id.
  */
-export interface AdapterMetadata<C extends VertexAdapterConfig> {
+interface AdapterMetadata<C extends VertexAdapterConfig> {
   /** Display name the model picker shows for this route. */
   readonly providerName: string
-  /** Catalogue this route advertises, in picker order. */
-  readonly catalog: readonly VertexModel[]
   /** Context window and output cap reported for every model on this route. */
   readonly capacity: { contextWindow: number; defaultMaxTokens: number }
   /** Model description reported for this route, project and region included. */
-  readonly describe: (name: string, config: C) => string
+  readonly describe: (config: C) => string
 }
 
 /** Terminal error finish carrying one failure. */
@@ -114,24 +113,15 @@ function abortedFinish(failure: LlmFailure): StreamChunk {
  * @param idleTimeoutMs - the configured per-read bound.
  * @returns the terminal failure, coded `TIMEOUT`.
  */
-export function idleTimeoutFailure(idleTimeoutMs: number): LlmFailure {
+function idleTimeoutFailure(idleTimeoutMs: number): LlmFailure {
   return {
     message: `google-vertex: no stream data for ${idleTimeoutMs}ms (streamIdleTimeoutMs)`,
     code: 'TIMEOUT',
   }
 }
 
-/** Read a refused response's body, tolerating a transport that ends early. */
-export async function errorBody(response: Response): Promise<string> {
-  try {
-    return await response.text()
-  } catch {
-    return ''
-  }
-}
-
 /** Classify a credential failure raised before the request was sent. */
-export function credentialFailure(error: unknown): LlmFailure {
+function credentialFailure(error: unknown): LlmFailure {
   if (error instanceof VertexAuthError) {
     return { message: error.message, code: error.code }
   }
@@ -142,7 +132,7 @@ export function credentialFailure(error: unknown): LlmFailure {
 }
 
 /** Classify a fetch or body-read failure, distinguishing cancellation. */
-export function transportFinish(options: GenerateOptions, error: unknown): StreamChunk {
+function transportFinish(options: GenerateOptions, error: unknown): StreamChunk {
   if (options.signal?.aborted === true) {
     return abortedFinish({ message: 'google-vertex: request aborted', code: 'ABORTED' })
   }
@@ -164,7 +154,7 @@ export function transportFinish(options: GenerateOptions, error: unknown): Strea
  * complete? A stream that ends without one is truncated. When absent, the pump
  * falls back to `terminal`.
  */
-export interface StreamTranslatorLike {
+interface StreamTranslatorLike {
   handle(event: Record<string, unknown>): Iterable<StreamChunk>
   readonly terminal: boolean
   readonly sawFinish?: boolean
@@ -173,11 +163,11 @@ export interface StreamTranslatorLike {
 }
 
 /** Everything one streaming call varies between the two publisher routes. */
-export interface StreamPumpOptions<C extends VertexAdapterConfig> {
+interface StreamPumpOptions {
   /** The request URL for the chosen model. */
-  readonly endpoint: (model: string, config: C) => string
+  readonly endpoint: (model: string, config: VertexAdapterConfig) => string
   /** The request body for the chosen model. */
-  readonly body: (options: GenerateOptions, config: C) => unknown
+  readonly body: (options: GenerateOptions, config: VertexAdapterConfig) => unknown
   /** Failure named when the body ended without the provider's finish. */
   readonly truncatedMessage: (model: string) => string
 }
@@ -214,7 +204,7 @@ export async function* streamVertex(
   fetch: FetchLike,
   tokens: TokenProvider,
   makeTranslator: (model: string) => StreamTranslatorLike,
-  pump: StreamPumpOptions<VertexAdapterConfig>,
+  pump: StreamPumpOptions,
 ): AsyncGenerator<StreamChunk> {
   const model = options.model.length > 0 ? options.model : config.models[0]?.id ?? ''
   const consumer = new AbortController()
@@ -223,14 +213,41 @@ export async function* streamVertex(
     : AbortSignal.any([options.signal, consumer.signal])
   let idleTimedOut = false
   let idleTimer: NodeJS.Timeout | undefined
-  const armIdle = (): void => {
-    if (idleTimer !== undefined) clearTimeout(idleTimer)
-    idleTimer = setTimeout(() => {
+  /** True while an operation of the provider's is outstanding. */
+  let idleReading = false
+  let idleStartedAt = 0
+  /**
+   * One timer wakes when the outstanding read would have outlived the bound;
+   * while the provider keeps answering it re-arms itself for the remainder, so
+   * a stream costs one timer instead of one `setTimeout`/`clearTimeout` pair per
+   * transport read.
+   */
+  const checkIdle = (): void => {
+    idleTimer = undefined
+    // Nothing outstanding: leave the timer unarmed; the next arm creates one.
+    // This also keeps a stream a consumer abandoned collectable.
+    if (!idleReading) return
+    const elapsed = performance.now() - idleStartedAt
+    if (elapsed >= config.streamIdleTimeoutMs) {
       idleTimedOut = true
       consumer.abort('google-vertex: stream idle timeout')
-    }, config.streamIdleTimeoutMs)
+      return
+    }
+    // The wake-up preceded this read's own deadline: sleep the remainder.
+    idleTimer = setTimeout(checkIdle, config.streamIdleTimeoutMs - elapsed)
   }
+  const armIdle = (): void => {
+    idleReading = true
+    idleStartedAt = performance.now()
+    idleTimer ??= setTimeout(checkIdle, config.streamIdleTimeoutMs)
+  }
+  /** A read resolved: nothing of the provider's is outstanding any more. */
   const clearIdle = (): void => {
+    idleReading = false
+  }
+  /** No operation will be armed again: leave no timer holding the event loop. */
+  const disarmIdle = (): void => {
+    idleReading = false
     if (idleTimer !== undefined) clearTimeout(idleTimer)
     idleTimer = undefined
   }
@@ -253,7 +270,7 @@ export async function* streamVertex(
     yield errorFinish(credentialFailure(error))
     return
   } finally {
-    clearIdle()
+    disarmIdle()
   }
 
   let response: Response
@@ -278,13 +295,13 @@ export async function* streamVertex(
     yield transportFinish(options, error)
     return
   } finally {
-    clearIdle()
+    disarmIdle()
   }
 
   if (!response.ok) {
     yield errorFinish(failureForStatus(
       response.status,
-      await errorBody(response),
+      await response.text().catch(() => ''),
       `model "${model}" in ${config.location}`,
     ))
     return
@@ -296,16 +313,27 @@ export async function* streamVertex(
 
   const translator = makeTranslator(model)
   try {
-    const events = streamSseRecords(
+    // The reader is driven directly rather than through an async generator:
+    // one record costs one loop turn instead of a suspended generator frame,
+    // a promise, and a microtask.
+    const reader = new SseRecordReader(
       response.body as unknown as AsyncIterable<Uint8Array>,
       { armIdle, clearIdle },
     )
-    for await (const event of events) {
-      yield * translator.handle(event)
-      // The provider ended the turn mid-body — `message_stop`, or an in-band
-      // error envelope. Its finish has been emitted, so neither the end of the
-      // body nor a close fault may add a second one.
-      if (translator.terminal) return
+    try {
+      for (let records = await reader.read(); records !== undefined; records = await reader.read()) {
+        for (const record of records) {
+          const event = parseSseRecord(record)
+          if (event === undefined) continue
+          yield * translator.handle(event)
+          // The provider ended the turn mid-body — `message_stop`, or an
+          // in-band error envelope. Its finish has been emitted, so neither the
+          // end of the body nor a close fault may add a second one.
+          if (translator.terminal) return
+        }
+      }
+    } finally {
+      await reader.close()
     }
   } catch (error) {
     // The provider already ended the turn, so a fault while closing the body
@@ -318,7 +346,7 @@ export async function* streamVertex(
     yield transportFinish(options, error)
     return
   } finally {
-    clearIdle()
+    disarmIdle()
   }
 
   if (idleTimedOut) {
@@ -350,14 +378,17 @@ export async function* streamVertex(
  */
 export abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> implements LlmAdapterLike {
   readonly #metadata: AdapterMetadata<C>
-  readonly #config: C
-  readonly #tokens: TokenProvider
-  readonly #fetch: FetchLike
-  readonly #modelCache: ModelCache<VertexModel>
+  readonly #modelCache: ModelCache
   readonly #discover: (() => Promise<readonly VertexModel[]>) | undefined
+  /** The config this adapter serves, for the stream pipeline below. */
+  protected readonly config: C
+  /** The transport this adapter was built with. */
+  protected readonly fetch: FetchLike
+  /** The token source this adapter asks before each request. */
+  protected readonly tokens: TokenProvider
 
   /**
-   * @param metadata - display name, catalog, capacities, and description text.
+   * @param metadata - display name, capacities, and description text.
    * @param config - the resolved configuration this adapter serves.
    * @param options - transport, token-source, and discovery overrides.
    */
@@ -367,26 +398,11 @@ export abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> impl
     options: { fetch?: FetchLike; tokens?: TokenProvider; discover?: () => Promise<readonly VertexModel[]> } = {},
   ) {
     this.#metadata = metadata
-    this.#config = config
-    this.#fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
-    this.#tokens = options.tokens ?? new ServiceAccountTokens(config.serviceAccount, { fetch: this.#fetch })
+    this.config = config
+    this.fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init))
+    this.tokens = options.tokens ?? new ServiceAccountTokens(config.serviceAccount, { fetch: this.fetch })
     this.#discover = options.discover
-    this.#modelCache = new ModelCache(metadata.catalog)
-  }
-
-  /** The config this adapter serves, for the stream pipeline below. */
-  protected get config(): C {
-    return this.#config
-  }
-
-  /** The transport this adapter was built with. */
-  protected get fetch(): FetchLike {
-    return this.#fetch
-  }
-
-  /** The token source this adapter asks before each request. */
-  protected get tokens(): TokenProvider {
-    return this.#tokens
+    this.#modelCache = new ModelCache(config.models)
   }
 
   /** {@inheritDoc LlmAdapterLike.providerInfo} */
@@ -455,13 +471,13 @@ export abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> impl
 
   /** Display metadata for one model id, named from the catalog or the given name. */
   #info(provider: string, model: string, overrideName?: string): LlmModelInfo {
-    const known = this.#metadata.catalog.find(entry => entry.id === model)
+    const known = this.config.models.find(entry => entry.id === model)
     const name = overrideName ?? known?.name ?? model
     return {
       provider,
       id: model,
       name,
-      description: this.#metadata.describe(name, this.#config),
+      description: this.#metadata.describe(this.config),
       inputModalities: ['text'],
     }
   }
@@ -485,9 +501,8 @@ export class GoogleVertexAnthropicAdapter extends VertexPublisherAdapter<VertexA
   ) {
     super({
       providerName: 'Google Vertex AI (Anthropic)',
-      catalog: config.models,
       capacity: { contextWindow: config.contextWindow, defaultMaxTokens: config.maxTokens },
-      describe: (_name, row) =>
+      describe: row =>
         `Google-hosted Anthropic model on Vertex AI (project ${row.project}, ${row.location}).`,
     }, config, options)
   }
@@ -499,8 +514,8 @@ export class GoogleVertexAnthropicAdapter extends VertexPublisherAdapter<VertexA
    * single terminal chunk; `message_stop` closes the turn mid-body, so this
    * route's finish rides that event.
    */
-  async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    yield * streamVertex(this.config, options, this.fetch, this.tokens, () => new StreamTranslator(), {
+  stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    return streamVertex(this.config, options, this.fetch, this.tokens, () => new StreamTranslator(), {
       endpoint: (model, config) => endpointFor(config.project, config.location, model),
       body: (request, config) => buildRequestBody(request, config),
       truncatedMessage: model => `google-vertex: model "${model}" stream ended before message_stop`,

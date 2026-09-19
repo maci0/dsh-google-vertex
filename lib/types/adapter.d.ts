@@ -24,7 +24,7 @@
  * @module dsh-google-vertex/adapter
  */
 import type { FetchLike, ServiceAccount } from './auth.ts';
-import type { GenerateOptions, LlmAdapterLike, LlmFailure, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, PreparedAdapterCall, StreamChunk } from './host.ts';
+import type { GenerateOptions, LlmAdapterLike, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, PreparedAdapterCall, StreamChunk } from './host.ts';
 /** One advertised model. */
 export interface VertexModel {
     readonly id: string;
@@ -43,7 +43,7 @@ export interface TokenProvider {
  * its context window; the model capacities of a Gemini route live on the
  * catalog entries, which is why `models` is typed loosely here.
  */
-export interface VertexAdapterConfig {
+interface VertexAdapterConfig {
     readonly serviceAccount: ServiceAccount;
     readonly project: string;
     readonly location: string;
@@ -60,34 +60,20 @@ export interface VertexAnthropicConfig extends VertexAdapterConfig {
 }
 /**
  * What separates one publisher route from the other, as one parameter set: the
- * display name, the catalogue wording, and the capacities `resolveModel`
+ * display name, the description wording, and the capacities `resolveModel`
  * reports for a model id.
  */
-export interface AdapterMetadata<C extends VertexAdapterConfig> {
+interface AdapterMetadata<C extends VertexAdapterConfig> {
     /** Display name the model picker shows for this route. */
     readonly providerName: string;
-    /** Catalogue this route advertises, in picker order. */
-    readonly catalog: readonly VertexModel[];
     /** Context window and output cap reported for every model on this route. */
     readonly capacity: {
         contextWindow: number;
         defaultMaxTokens: number;
     };
     /** Model description reported for this route, project and region included. */
-    readonly describe: (name: string, config: C) => string;
+    readonly describe: (config: C) => string;
 }
-/**
- * The failure for a stream that produced no bytes within the configured bound.
- * @param idleTimeoutMs - the configured per-read bound.
- * @returns the terminal failure, coded `TIMEOUT`.
- */
-export declare function idleTimeoutFailure(idleTimeoutMs: number): LlmFailure;
-/** Read a refused response's body, tolerating a transport that ends early. */
-export declare function errorBody(response: Response): Promise<string>;
-/** Classify a credential failure raised before the request was sent. */
-export declare function credentialFailure(error: unknown): LlmFailure;
-/** Classify a fetch or body-read failure, distinguishing cancellation. */
-export declare function transportFinish(options: GenerateOptions, error: unknown): StreamChunk;
 /**
  * One provider translator, as the shared pump reads it.
  *
@@ -100,7 +86,7 @@ export declare function transportFinish(options: GenerateOptions, error: unknown
  * complete? A stream that ends without one is truncated. When absent, the pump
  * falls back to `terminal`.
  */
-export interface StreamTranslatorLike {
+interface StreamTranslatorLike {
     handle(event: Record<string, unknown>): Iterable<StreamChunk>;
     readonly terminal: boolean;
     readonly sawFinish?: boolean;
@@ -108,11 +94,11 @@ export interface StreamTranslatorLike {
     finish?(): Iterable<StreamChunk>;
 }
 /** Everything one streaming call varies between the two publisher routes. */
-export interface StreamPumpOptions<C extends VertexAdapterConfig> {
+interface StreamPumpOptions {
     /** The request URL for the chosen model. */
-    readonly endpoint: (model: string, config: C) => string;
+    readonly endpoint: (model: string, config: VertexAdapterConfig) => string;
     /** The request body for the chosen model. */
-    readonly body: (options: GenerateOptions, config: C) => unknown;
+    readonly body: (options: GenerateOptions, config: VertexAdapterConfig) => unknown;
     /** Failure named when the body ended without the provider's finish. */
     readonly truncatedMessage: (model: string) => string;
 }
@@ -142,7 +128,7 @@ export interface StreamPumpOptions<C extends VertexAdapterConfig> {
  * @param pump - this route's endpoint, body, and terminal wording.
  * @yields every chunk the provider's stream completes.
  */
-export declare function streamVertex(config: VertexAdapterConfig, options: GenerateOptions, fetch: FetchLike, tokens: TokenProvider, makeTranslator: (model: string) => StreamTranslatorLike, pump: StreamPumpOptions<VertexAdapterConfig>): AsyncGenerator<StreamChunk>;
+export declare function streamVertex(config: VertexAdapterConfig, options: GenerateOptions, fetch: FetchLike, tokens: TokenProvider, makeTranslator: (model: string) => StreamTranslatorLike, pump: StreamPumpOptions): AsyncGenerator<StreamChunk>;
 /**
  * Duck-typed base for both Vertex publisher adapters.
  *
@@ -154,8 +140,14 @@ export declare function streamVertex(config: VertexAdapterConfig, options: Gener
  */
 export declare abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> implements LlmAdapterLike {
     #private;
+    /** The config this adapter serves, for the stream pipeline below. */
+    protected readonly config: C;
+    /** The transport this adapter was built with. */
+    protected readonly fetch: FetchLike;
+    /** The token source this adapter asks before each request. */
+    protected readonly tokens: TokenProvider;
     /**
-     * @param metadata - display name, catalog, capacities, and description text.
+     * @param metadata - display name, capacities, and description text.
      * @param config - the resolved configuration this adapter serves.
      * @param options - transport, token-source, and discovery overrides.
      */
@@ -164,12 +156,6 @@ export declare abstract class VertexPublisherAdapter<C extends VertexAdapterConf
         tokens?: TokenProvider;
         discover?: () => Promise<readonly VertexModel[]>;
     });
-    /** The config this adapter serves, for the stream pipeline below. */
-    protected get config(): C;
-    /** The transport this adapter was built with. */
-    protected get fetch(): FetchLike;
-    /** The token source this adapter asks before each request. */
-    protected get tokens(): TokenProvider;
     /** {@inheritDoc LlmAdapterLike.providerInfo} */
     providerInfo(provider: string): LlmProviderInfo;
     /**
@@ -230,3 +216,4 @@ export declare class GoogleVertexAnthropicAdapter extends VertexPublisherAdapter
      */
     stream(options: GenerateOptions): AsyncIterable<StreamChunk>;
 }
+export {};

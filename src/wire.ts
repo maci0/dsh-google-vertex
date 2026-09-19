@@ -16,6 +16,14 @@
  */
 
 import { systemParts as collectSystemParts, takeCounters, toolInput } from './wire-shared.ts'
+// The three provider-neutral codes are the harness's own; imported for local use
+// and re-exported so callers keep importing them from here.
+import {
+  CONTEXT_WINDOW_EXCEEDED_CODE,
+  EMPTY_RESPONSE_CODE,
+  QUOTA_EXCEEDED_CODE,
+} from '@deepseek-ai/dsh-llm'
+export { CONTEXT_WINDOW_EXCEEDED_CODE, EMPTY_RESPONSE_CODE, QUOTA_EXCEEDED_CODE }
 import type {
   ContentBlock,
   FinishReason,
@@ -287,13 +295,6 @@ export function mapUsage(usage: WireUsage): TokenUsage {
   }
 }
 
-/** Harness code reported when the request overflowed the model's context. */
-export const CONTEXT_WINDOW_EXCEEDED_CODE = 'CONTEXT_WINDOW_EXCEEDED'
-/** Harness code reported when the request produced nothing at all. */
-export const EMPTY_RESPONSE_CODE = 'EMPTY_RESPONSE'
-/** Harness code reported when a quota or rate cap refused the request. */
-export const QUOTA_EXCEEDED_CODE = 'QUOTA'
-
 /**
  * Map one provider stop reason onto the harness vocabulary.
  *
@@ -455,14 +456,21 @@ export function failureForEvent(error: unknown): LlmFailure {
  * @returns the parsed payload, or undefined for a comment, ping, or malformed record.
  */
 export function parseSseRecord(record: string): Record<string, unknown> | undefined {
-  const data: string[] = []
-  for (const line of record.split('\n')) {
-    if (!line.startsWith('data:')) continue
-    data.push(line.slice(5).replace(/^ /, ''))
+  let payload = ''
+  let found = false
+  const length = record.length
+  for (let cursor = 0; cursor <= length;) {
+    let end = record.indexOf('\n', cursor)
+    if (end === -1) end = length
+    if (record.startsWith('data:', cursor)) {
+      const value = record.slice(record.charCodeAt(cursor + 5) === 0x20 ? cursor + 6 : cursor + 5, end)
+      payload = found ? `${payload}\n${value}` : value
+      found = true
+    }
+    if (end === length) break
+    cursor = end + 1
   }
-  if (data.length === 0) return undefined
-  const payload = data.join('\n')
-  if (payload.length === 0) return undefined
+  if (!found || payload.length === 0) return undefined
   try {
     const parsed: unknown = JSON.parse(payload)
     return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : undefined
@@ -486,7 +494,9 @@ export class SseBuffer {
    * @returns every complete record it completes, in order.
    */
   push(text: string): string[] {
-    this.#buffer += text.replace(/\r\n?/g, '\n')
+    // The regex engine is only worth starting when the chunk carries a CR; a
+    // body served with bare LF (the common case) is scanned once and kept.
+    this.#buffer += text.includes('\r') ? text.replace(/\r\n?/g, '\n') : text
     const records = this.#buffer.split('\n\n')
     this.#buffer = records.pop() ?? ''
     return records
@@ -512,51 +522,70 @@ interface SsePumpHooks {
 }
 
 /**
- * Frame one streaming response body into its parsed SSE payloads.
+ * Frames one streaming response body into SSE records, one transport read at a
+ * time.
  *
  * Both publisher routes answer with the same framing and differ only in what
- * the payload means, so the read loop, the decoder and record buffers, the
- * end-of-body flush, and the trailing `SseBuffer` record live here once. The
- * adapter supplies the idle watchdog and translates each payload.
+ * the payload means, so the read loop, the decoder and record buffers, and the
+ * end-of-body flush live here once. The adapter supplies the idle watchdog.
  *
- * The idle bound covers one outstanding read: it is armed before every read,
+ * This is a reader rather than an async generator because a generator costs a
+ * suspended frame, a promise, and a microtask per framed record; the adapter
+ * drives this directly, so a record is framed, parsed, and translated in the
+ * same turn.
+ *
+ * The idle bound covers one outstanding read: it is armed before every read and
  * cleared as soon as that read resolves — a consumer holding a yielded event is
- * not a stalled provider — and cleared again when the pump exits, whether the
- * body ended, the reader stopped early, or a read threw. A read that throws is
- * left for the adapter to classify.
- * @param body - the response body's byte stream.
- * @param hooks - the caller's idle-watchdog controls.
- * @yields every payload the body framed, in order.
+ * not a stalled provider. A read that throws is left for the caller to
+ * classify.
  */
-export async function* streamSseRecords(
-  body: AsyncIterable<Uint8Array>,
-  hooks: SsePumpHooks,
-): AsyncGenerator<Record<string, unknown>> {
-  const buffer = new SseBuffer()
-  const decoder = new TextDecoder()
-  try {
-    hooks.armIdle()
-    for await (const chunk of body) {
-      hooks.clearIdle()
-      for (const record of buffer.push(decoder.decode(chunk, { stream: true }))) {
-        const event = parseSseRecord(record)
-        if (event !== undefined) yield event
-      }
-      hooks.armIdle()
+export class SseRecordReader {
+  readonly #body: AsyncIterator<Uint8Array>
+  readonly #hooks: SsePumpHooks
+  readonly #buffer = new SseBuffer()
+  readonly #decoder = new TextDecoder()
+  #done = false
+
+  /**
+   * @param body - the response body's byte stream.
+   * @param hooks - the caller's idle-watchdog controls.
+   */
+  constructor(body: AsyncIterable<Uint8Array>, hooks: SsePumpHooks) {
+    this.#body = body[Symbol.asyncIterator]()
+    this.#hooks = hooks
+  }
+
+  /**
+   * Await the next transport read and frame the records it completes.
+   * @returns the records this read completed — an empty array when it completed
+   * none, including the final read that drains the decoder — or undefined once
+   * the body has ended and been drained.
+   */
+  async read(): Promise<readonly string[] | undefined> {
+    if (this.#done) return undefined
+    this.#hooks.armIdle()
+    const next = await this.#body.next()
+    this.#hooks.clearIdle()
+    if (next.done !== true) {
+      return this.#buffer.push(this.#decoder.decode(next.value, { stream: true }))
     }
+    this.#done = true
     // The decoder holds a partial character and the buffer a partial record;
     // both belong to the body that just ended.
-    for (const record of buffer.push(decoder.decode())) {
-      const event = parseSseRecord(record)
-      if (event !== undefined) yield event
-    }
-    const trailing = buffer.flush()
-    if (trailing !== undefined) {
-      const event = parseSseRecord(trailing)
-      if (event !== undefined) yield event
-    }
-  } finally {
-    hooks.clearIdle()
+    const records = this.#buffer.push(this.#decoder.decode())
+    const trailing = this.#buffer.flush()
+    if (trailing !== undefined) records.push(trailing)
+    return records
+  }
+
+  /**
+   * Release the body iterator, so a caller that stops early tears down the
+   * transport instead of leaving it reading into a buffer nobody drains.
+   */
+  async close(): Promise<void> {
+    if (this.#done) return
+    this.#done = true
+    await this.#body.return?.()
   }
 }
 

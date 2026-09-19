@@ -9,10 +9,10 @@
  * `ctx.llm.listProviders()` and asks each adapter for `listModels()` /
  * `resolveModel()`.
  *
- * A third: the `google-vertex` settings namespace. Both adapters discover their
- * catalogs at runtime behind a five-minute cache, and a browser half has no
+ * A third: the `google-vertex` settings namespace. The Gemini adapter discovers
+ * its catalog at runtime behind a five-minute cache, and a browser half has no
  * other way to reach this process, so the namespace's one write — the Refresh
- * control on this plugin's row page under Plugins — is what drops those caches
+ * control on this plugin's row page under Plugins — is what drops that cache
  * on demand.
  *
  * The credential is the service-account JSON itself: a path in configuration,

@@ -15,12 +15,12 @@
 import { VertexPublisherAdapter } from './adapter.ts';
 import type { TokenProvider, VertexModel } from './adapter.ts';
 import type { FetchLike, ServiceAccount } from './auth.ts';
-import { type GeminiModel, type GeminiWireConfig } from './gemini.ts';
+import type { VertexWireConfig } from './wire.ts';
 import type { GenerateOptions, StreamChunk } from './host.ts';
 /** Resolved adapter configuration for the Gemini route. */
-export interface GeminiAdapterConfig extends GeminiWireConfig {
+export interface GeminiAdapterConfig extends VertexWireConfig {
     readonly serviceAccount: ServiceAccount;
-    readonly models: readonly GeminiModel[];
+    readonly models: readonly VertexModel[];
     /** Bound on the interval between two stream reads, in milliseconds. */
     readonly streamIdleTimeoutMs: number;
 }

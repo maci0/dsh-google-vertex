@@ -192,7 +192,7 @@ export interface SettingsSectionHooksLike {
     onChange(): void;
 }
 /** The `ctx.settings` seam, narrowed to the one call this plugin makes. */
-export interface SettingsServiceLike {
+interface SettingsServiceLike {
     /**
      * Register a namespace with the plugin's composition entry as the `base`
      * layer, falling back to that entry when no provider is mounted.
@@ -200,7 +200,7 @@ export interface SettingsServiceLike {
     installSection(owner: unknown, namespace: string, schema: unknown, entry: unknown, hooks: SettingsSectionHooksLike): void;
 }
 /** The service scope a `ctx.inject(['settings'], …)` callback receives. */
-export interface SettingsContext extends HostContext {
+interface SettingsContext extends HostContext {
     readonly settings: SettingsServiceLike;
 }
 /** The host context slice this plugin touches. */

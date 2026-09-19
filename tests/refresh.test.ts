@@ -2,10 +2,12 @@
  * Refresh test: the manual re-discovery the browser half's card asks for.
  *
  * The card can only reach the host process through a settings write, so the
- * whole path is: settings commit → the plugin's change hook → both adapters
- * drop their cached catalogs → the next catalog read reaches Vertex again. The
- * test drives that path over a real Cordis `Context`, a stub `settings` service
- * that records the hook, and a stubbed transport that counts catalog requests.
+ * whole path is: settings commit → the plugin's change hook → the adapters
+ * drop their cached catalogs → the next catalog read reaches Vertex again. Only
+ * the Gemini route discovers, so that is the route the stub transport counts;
+ * the Claude route serves its configured list and must never reach the network.
+ * The test drives that path over a real Cordis `Context`, a stub `settings`
+ * service that records the hook, and a stubbed transport.
  *
  * @module dsh-google-vertex/tests/refresh
  */
@@ -66,7 +68,7 @@ class StubSettings extends Service {
 /** An adapter with the refresh verb the plugin's settings hook calls. */
 type RefreshableAdapter = LlmAdapterLike & { invalidateModels(): void }
 
-test('a committed settings write drops both cached catalogs, so the next read re-discovers', async () => {
+test('a committed settings write drops the cached catalog, so the next read re-discovers', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-google-vertex-refresh-'))
   const accountPath = join(dir, 'service-account.json')
   // A real key: the token source signs the assertion before it ever reaches the
@@ -85,22 +87,17 @@ test('a committed settings write drops both cached catalogs, so the next read re
   }))
 
   /** Catalog requests, the only traffic that matters here. */
-  const catalog = { gemini: 0, anthropic: 0 }
+  let catalogs = 0
   const realFetch = globalThis.fetch
   globalThis.fetch = ((input: string | URL | Request): Promise<Response> => {
     const url = String(input)
     if (url.includes('oauth2.googleapis.com')) {
       return Promise.resolve(new Response(JSON.stringify({ access_token: 'token', expires_in: 3600 }), { status: 200 }))
     }
-    if (url.includes('/publishers/google/models')) {
-      catalog.gemini += 1
-      return Promise.resolve(new Response(JSON.stringify({
-        models: [{ name: 'publishers/google/models/gemini-9-live', displayName: 'Gemini 9 Live' }],
-      }), { status: 200 }))
-    }
-    // Anthropic discovery probes one model id per request; anything but 404 keeps it.
-    catalog.anthropic += 1
-    return Promise.resolve(new Response('{}', { status: 400 }))
+    catalogs += 1
+    return Promise.resolve(new Response(JSON.stringify({
+      models: [{ name: 'publishers/google/models/gemini-9-live', displayName: 'Gemini 9 Live' }],
+    }), { status: 200 }))
   }) as typeof globalThis.fetch
 
   try {
@@ -120,25 +117,23 @@ test('a committed settings write drops both cached catalogs, so the next read re
 
     const discovered = await gemini.listModels(plugin.GEMINI_PROVIDER)
     assert.ok(discovered.some(model => model.id === 'gemini-9-live'), 'the first read discovers live models')
-    assert.equal(catalog.gemini, 1)
-    assert.equal(catalog.anthropic, 0, 'the Anthropic cache was neither asked for nor dropped yet')
+    assert.equal(catalogs, 1)
 
-    // While the five-minute cache holds, neither route reaches the provider.
+    // While the five-minute cache holds, the route does not reach the provider.
     await gemini.listModels(plugin.GEMINI_PROVIDER)
-    await anthropic.listModels(plugin.PROVIDER)
-    assert.equal(catalog.gemini, 1)
-    const probesBefore = catalog.anthropic
-    assert.ok(probesBefore > 0, 'the first Anthropic read probes its candidates')
-    await anthropic.listModels(plugin.PROVIDER)
-    assert.equal(catalog.anthropic, probesBefore)
+    assert.equal(catalogs, 1)
+
+    // The Claude route serves its configured catalog: no discovery, no request.
+    const claude = await anthropic.listModels(plugin.PROVIDER)
+    assert.ok(claude.length > 0, 'the Claude catalog is served from configuration')
+    assert.equal(catalogs, 1, 'the Claude route made no catalog request')
 
     // The card's write lands here as a committed change.
     hooks.onChange()
 
     await gemini.listModels(plugin.GEMINI_PROVIDER)
-    await anthropic.listModels(plugin.PROVIDER)
-    assert.equal(catalog.gemini, 2, 'Gemini re-discovered after the refresh')
-    assert.equal(catalog.anthropic, probesBefore * 2, 'Anthropic re-probed after the refresh')
+    assert.equal(catalogs, 2, 'Gemini re-discovered after the refresh')
+    assert.deepEqual(await anthropic.listModels(plugin.PROVIDER), claude, 'the Claude catalog is unchanged')
 
     await fiber.dispose()
   } finally {

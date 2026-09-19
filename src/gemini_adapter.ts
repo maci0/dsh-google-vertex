@@ -25,15 +25,14 @@ import {
   DEFAULT_GEMINI_MAX_TOKENS,
   GeminiStreamTranslator,
   geminiEndpointFor,
-  type GeminiModel,
-  type GeminiWireConfig,
 } from './gemini.ts'
+import type { VertexWireConfig } from './wire.ts'
 import type { GenerateOptions, StreamChunk } from './host.ts'
 
 /** Resolved adapter configuration for the Gemini route. */
-export interface GeminiAdapterConfig extends GeminiWireConfig {
+export interface GeminiAdapterConfig extends VertexWireConfig {
   readonly serviceAccount: ServiceAccount
-  readonly models: readonly GeminiModel[]
+  readonly models: readonly VertexModel[]
   /** Bound on the interval between two stream reads, in milliseconds. */
   readonly streamIdleTimeoutMs: number
 }
@@ -65,9 +64,8 @@ export class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<GeminiAdap
   ) {
     super({
       providerName: 'Google Vertex AI (Gemini)',
-      catalog: config.models,
       capacity: GEMINI_CAPACITY,
-      describe: (_name, row) =>
+      describe: row =>
         `Google Gemini on Vertex AI (project ${row.project}, ${row.location}).`,
     }, config, options)
   }
@@ -82,8 +80,8 @@ export class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<GeminiAdap
    * the turn. The shared pump owns the watchdog, the token mint, and the SSE
    * loop; this route's finish is built at the end of the body.
    */
-  async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    yield * streamVertex(this.config, options, this.fetch, this.tokens, model => new GeminiStreamTranslator(model), {
+  stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    return streamVertex(this.config, options, this.fetch, this.tokens, model => new GeminiStreamTranslator(model), {
       endpoint: (model, config) => geminiEndpointFor(config.project, config.location, model),
       body: (request, config) => buildGeminiRequest(request, config),
       truncatedMessage: model => `google-vertex: model "${model}" stream ended before a finish reason`,

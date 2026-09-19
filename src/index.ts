@@ -9,10 +9,10 @@
  * `ctx.llm.listProviders()` and asks each adapter for `listModels()` /
  * `resolveModel()`.
  *
- * A third: the `google-vertex` settings namespace. Both adapters discover their
- * catalogs at runtime behind a five-minute cache, and a browser half has no
+ * A third: the `google-vertex` settings namespace. The Gemini adapter discovers
+ * its catalog at runtime behind a five-minute cache, and a browser half has no
  * other way to reach this process, so the namespace's one write — the Refresh
- * control on this plugin's row page under Plugins — is what drops those caches
+ * control on this plugin's row page under Plugins — is what drops that cache
  * on demand.
  *
  * The credential is the service-account JSON itself: a path in configuration,
@@ -28,8 +28,8 @@ import { GoogleVertexAnthropicAdapter } from './adapter.ts'
 import type { VertexAnthropicConfig, VertexModel } from './adapter.ts'
 import { loadServiceAccount } from './auth.ts'
 import { ServiceAccountTokens } from './auth.ts'
-import { fetchGeminiModels, probeAnthropicModels } from './discovery.ts'
-import { DEFAULT_GEMINI_CONTEXT_WINDOW, DEFAULT_GEMINI_MAX_TOKENS, DEFAULT_GEMINI_MODELS, type GeminiModel } from './gemini.ts'
+import { fetchGeminiModels } from './discovery.ts'
+import { DEFAULT_GEMINI_CONTEXT_WINDOW, DEFAULT_GEMINI_MAX_TOKENS, DEFAULT_GEMINI_MODELS } from './gemini.ts'
 import { GoogleVertexGeminiAdapter } from './gemini_adapter.ts'
 import type { GeminiAdapterConfig } from './gemini_adapter.ts'
 import { DEFAULT_LOCATION, DEFAULT_STREAM_IDLE_TIMEOUT_MS, MAX_TIMER_DELAY_MS } from './wire.ts'
@@ -163,7 +163,11 @@ interface ResolvedConfig {
  * @returns the resolved adapter configuration.
  */
 export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = process.env): ResolvedConfig {
-  const serviceAccountFile = config.serviceAccountFile ?? env['GOOGLE_APPLICATION_CREDENTIALS']
+  // The exported schema is the one source of the numeric defaults and bounds.
+  // The credential path, the project, and the region keep their environment
+  // fallbacks, so they are read off the raw row instead.
+  const filled = Config(config) as Config & { contextWindow: number; maxTokens: number; streamIdleTimeoutMs: number }
+  const serviceAccountFile = filled.serviceAccountFile ?? env['GOOGLE_APPLICATION_CREDENTIALS']
   if (serviceAccountFile === undefined || serviceAccountFile.trim().length === 0) {
     throw new Error(
       'google-vertex: no service account configured — set serviceAccountFile in this plugin\'s row,'
@@ -172,7 +176,7 @@ export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = proc
   }
   const serviceAccount = loadServiceAccount(serviceAccountFile)
 
-  const project = config.project
+  const project = filled.project
     ?? env['GOOGLE_CLOUD_PROJECT']
     ?? env['GCLOUD_PROJECT']
     ?? serviceAccount.project_id
@@ -188,24 +192,24 @@ export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = proc
     throw new Error(`google-vertex: location "${location}" is not a valid Vertex region`)
   }
 
-  const ids: readonly VertexModel[] = config.models === undefined || config.models.length === 0
+  const ids: readonly VertexModel[] = filled.models === undefined || filled.models.length === 0
     ? DEFAULT_MODELS
-    : config.models.map(id => ({ id, name: id }))
+    : filled.models.map(id => ({ id, name: id }))
   for (const model of ids) {
     if (model.id.trim().length === 0) throw new Error('google-vertex: model ids must be non-empty strings')
   }
 
-  const geminiIds: readonly string[] = config.geminiModels === undefined || config.geminiModels.length === 0
+  const geminiIds: readonly string[] = filled.geminiModels === undefined || filled.geminiModels.length === 0
     ? DEFAULT_GEMINI_MODELS.map(model => model.id)
-    : config.geminiModels
-  const geminiModels: readonly GeminiModel[] = geminiIds.map((id) => {
+    : filled.geminiModels
+  const geminiModels: readonly VertexModel[] = geminiIds.map((id) => {
     if (id.trim().length === 0) throw new Error('google-vertex: geminiModels ids must be non-empty strings')
     // A configured id keeps the built-in entry's wording when it is one of them;
     // every model serves the same capacities, which live on the wire config.
     return DEFAULT_GEMINI_MODELS.find(model => model.id === id) ?? { id, name: id }
   })
 
-  const streamIdleTimeoutMs = config.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS
+  const streamIdleTimeoutMs = filled.streamIdleTimeoutMs
 
   return {
     serviceAccountFile,
@@ -214,8 +218,8 @@ export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = proc
       project,
       location,
       models: ids,
-      contextWindow: config.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
-      maxTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
+      contextWindow: filled.contextWindow,
+      maxTokens: filled.maxTokens,
       streamIdleTimeoutMs,
     },
     gemini: {
@@ -238,19 +242,14 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   const resolved = resolveConfig(config)
   const { anthropic, gemini } = resolved
 
-  // Both adapters discover models at runtime with a 5-minute cache.
-  // Gemini: fetched from the Vertex publishers/google/models catalog API.
-  // Anthropic: probed by sending a minimal request to each hardcoded model id;
-  //   a 404 drops it from the list, anything else keeps it.
+  // Only the Gemini route discovers: Vertex has no Anthropic listing endpoint,
+  // so the Claude catalog is the configured (or built-in) list itself.
   const fetchFn: (input: string, init: RequestInit) => Promise<Response>
     = (input, init) => globalThis.fetch(input, init)
   const tokenSource = new ServiceAccountTokens(anthropic.serviceAccount, { fetch: fetchFn })
   const discoverGemini = () => fetchGeminiModels(gemini.location, tokenSource, fetchFn)
-  const discoverAnthropic = () => probeAnthropicModels(
-    anthropic.models, anthropic.project, anthropic.location, tokenSource, fetchFn,
-  )
 
-  const anthropicAdapter = new GoogleVertexAnthropicAdapter(anthropic, { discover: discoverAnthropic })
+  const anthropicAdapter = new GoogleVertexAnthropicAdapter(anthropic)
   const geminiAdapter = new GoogleVertexGeminiAdapter(gemini, { discover: discoverGemini })
   ctx.llm.registerAdapter([PROVIDER], anthropicAdapter)
   ctx.llm.registerAdapter([GEMINI_PROVIDER], geminiAdapter)
@@ -281,7 +280,7 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   ctx.logger.info(
     `google-vertex: providers "${PROVIDER}" and "${GEMINI_PROVIDER}" registered for project ${anthropic.project}`
     + ` (location ${anthropic.location}, credentials ${resolved.serviceAccountFile})`
-    + ` — Claude: ${anthropic.models.map(model => model.id).join(', ')} (+ probe discovery)`
+    + ` — Claude: ${anthropic.models.map(model => model.id).join(', ')}`
     + ` — Gemini: ${gemini.models.map(model => model.id).join(', ')} (+ live discovery)`,
   )
 }

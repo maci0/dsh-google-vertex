@@ -10,6 +10,8 @@
  * @module dsh-google-vertex/gemini
  */
 import type { FinishReason, GenerateOptions, Message, StreamChunk, TokenUsage } from './host.ts';
+import type { VertexWireConfig } from './wire.ts';
+import type { VertexModel } from './adapter.ts';
 /** Harness code reported when the provider refused on safety grounds. */
 export declare const SAFETY_BLOCKED_CODE = "SAFETY";
 /**
@@ -26,22 +28,10 @@ export declare const DEFAULT_GEMINI_CONTEXT_WINDOW = 1048576;
  */
 export declare const DEFAULT_GEMINI_MAX_TOKENS = 65535;
 /**
- * One advertised Gemini model. Capacities are not per model: every current
- * Gemini model serves the same context window and the same output cap, and a
- * configured catalog names ids only, so nothing can differ them. The pair is
- * {@link DEFAULT_GEMINI_CONTEXT_WINDOW} and {@link DEFAULT_GEMINI_MAX_TOKENS};
- * give a model its own capacities when one actually differs, and the adapter's
- * capacity lookup will read them from an entry here again.
- */
-export interface GeminiModel {
-    readonly id: string;
-    readonly name: string;
-}
-/**
  * Gemini models the global endpoint serves, in picker order. Ids are the
  * provider's own aliases, so a promoted release needs no edit here.
  */
-export declare const DEFAULT_GEMINI_MODELS: readonly GeminiModel[];
+export declare const DEFAULT_GEMINI_MODELS: readonly VertexModel[];
 /**
  * The streaming publisher path for one Gemini model.
  * @param project - Google Cloud project id.
@@ -98,12 +88,6 @@ export interface GeminiRequestBody {
         stopSequences?: string[];
     };
 }
-/** What the Gemini adapter needs to build a request and address the endpoint. */
-export interface GeminiWireConfig {
-    project: string;
-    location: string;
-    maxTokens: number;
-}
 /**
  * Index-aligned provider metadata for one emitted block.
  *
@@ -157,7 +141,7 @@ export declare function readGeminiReplay(message: Message, model: string): reado
  * @param config - project, location, and default output cap.
  * @returns the wire body.
  */
-export declare function buildGeminiRequest(options: GenerateOptions, config: GeminiWireConfig): GeminiRequestBody;
+export declare function buildGeminiRequest(options: GenerateOptions, config: VertexWireConfig): GeminiRequestBody;
 /** Raw usage counters as Vertex reports them. */
 interface GeminiUsageMetadata {
     promptTokenCount?: number;

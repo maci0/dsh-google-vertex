@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
 
-import { DEFAULT_CACHE_TTL_MS, fetchGeminiModels, ModelCache, probeAnthropicModels } from '../src/discovery.ts'
+import { DEFAULT_CACHE_TTL_MS, fetchGeminiModels, ModelCache } from '../src/discovery.ts'
 import type { FetchLike } from '../src/auth.ts'
 
 // ---------------------------------------------------------------------------
@@ -219,91 +219,4 @@ test('fetchGeminiModels uses global endpoint when location is global', async () 
 
   await fetchGeminiModels('global', tokenSource, fetch)
   assert.ok(calledUrl.startsWith('https://aiplatform.googleapis.com/'))
-})
-
-// ---------------------------------------------------------------------------
-// probeAnthropicModels
-// ---------------------------------------------------------------------------
-
-const CANDIDATES = [
-  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6 (Vertex)' },
-  { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5 (Vertex)' },
-  { id: 'claude-gone', name: 'Claude Gone (Vertex)' },
-]
-
-test('probeAnthropicModels keeps models that return 400 and drops 404', async () => {
-  const fetch: FetchLike = (url, _init) => {
-    const status = url.includes('claude-gone') ? 404 : 400
-    return Promise.resolve(new Response('', { status }))
-  }
-  const tokenSource = { get: async () => 'token' }
-
-  const result = await probeAnthropicModels(CANDIDATES, 'proj', 'global', tokenSource, fetch)
-  assert.equal(result.length, 2)
-  assert.equal(result[0]?.id, 'claude-opus-4-6')
-  assert.equal(result[1]?.id, 'claude-sonnet-4-5')
-})
-
-test('probeAnthropicModels keeps models that return 200', async () => {
-  const fetch: FetchLike = (_url, _init) =>
-    Promise.resolve(new Response('', { status: 200 }))
-  const tokenSource = { get: async () => 'token' }
-
-  const result = await probeAnthropicModels(CANDIDATES, 'proj', 'us-east4', tokenSource, fetch)
-  assert.equal(result.length, 3)
-})
-
-test('probeAnthropicModels keeps models on network error', async () => {
-  const fetch: FetchLike = (_url, _init) => Promise.reject(new Error('network'))
-  const tokenSource = { get: async () => 'token' }
-
-  const result = await probeAnthropicModels(CANDIDATES, 'proj', 'global', tokenSource, fetch)
-  assert.equal(result.length, 3)
-})
-
-test('probeAnthropicModels sends correct endpoint and body', async () => {
-  const requests: { url: string; body: string }[] = []
-  const fetch: FetchLike = async (url, init) => {
-    requests.push({ url, body: typeof init.body === 'string' ? init.body : '' })
-    return new Response('', { status: 400 })
-  }
-  const tokenSource = { get: async () => 'bearer-tok' }
-
-  await probeAnthropicModels(
-    [{ id: 'claude-sonnet-4-5', name: 'test' }],
-    'my-project', 'us-central1', tokenSource, fetch,
-  )
-  assert.equal(requests.length, 1)
-  const req = requests[0]!
-  assert.ok(req.url.includes('us-central1-aiplatform.googleapis.com'))
-  assert.ok(req.url.includes('/projects/my-project/'))
-  assert.ok(req.url.includes('/publishers/anthropic/models/claude-sonnet-4-5:rawPredict'))
-  const body = JSON.parse(req.body)
-  assert.equal(body.anthropic_version, 'vertex-2023-10-16')
-  assert.equal(body.max_tokens, 1)
-  assert.deepEqual(body.messages, [])
-})
-
-test('probeAnthropicModels returns empty candidates unchanged', async () => {
-  const fetch: FetchLike = () => { throw new Error('should not be called') }
-  const tokenSource = { get: async () => 'token' }
-
-  const result = await probeAnthropicModels([], 'proj', 'global', tokenSource, fetch)
-  assert.equal(result.length, 0)
-})
-
-test('probeAnthropicModels keeps models on 429 and 500', async () => {
-  let call = 0
-  const fetch: FetchLike = (_url, _init) => {
-    call++
-    const status = call === 1 ? 429 : 500
-    return Promise.resolve(new Response('', { status }))
-  }
-  const tokenSource = { get: async () => 'token' }
-
-  const result = await probeAnthropicModels(
-    [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }],
-    'proj', 'global', tokenSource, fetch,
-  )
-  assert.equal(result.length, 2)
 })

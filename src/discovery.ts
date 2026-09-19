@@ -3,8 +3,7 @@
  *
  * Gemini models are fetched from the Vertex Model Garden catalog API
  * (`publishers/google/models`). Anthropic models have no listing endpoint on
- * Vertex, so they fall back to the hardcoded defaults with an optional probe
- * that tests whether each model id is actually reachable.
+ * Vertex, so the adapter serves the catalog from configuration instead.
  *
  * Results are cached with a configurable TTL so the model picker does not
  * make a network call on every open.
@@ -44,8 +43,8 @@ interface PublisherModelEntry {
 }
 
 /** Cached model list with an expiry timestamp. */
-interface CachedModels<T> {
-  models: readonly T[]
+interface CachedModels {
+  models: readonly VertexModel[]
   expiresAt: number
 }
 
@@ -161,123 +160,23 @@ export async function fetchGeminiModels(
 }
 
 /**
- * The `:rawPredict` endpoint for one Anthropic model on Vertex.
- *
- * This is the non-streaming sibling of `:streamRawPredict` the adapter uses
- * for generation. A POST with an intentionally minimal body will return 400
- * (model exists, bad request) or 404 (model not served in this region).
- * @param project - Google Cloud project id.
- * @param location - region, or `global`.
- * @param model - publisher model id, e.g. `claude-sonnet-4-5`.
- * @returns the absolute probe URL.
- */
-function anthropicProbeUrl(project: string, location: string, model: string): string {
-  const origin = endpointOrigin(location)
-  return `${origin}/${API_VERSION}/projects/${encodeURIComponent(project)}`
-    + `/locations/${encodeURIComponent(location)}`
-    + `/publishers/anthropic/models/${encodeURIComponent(model)}:rawPredict`
-}
-
-/**
- * Probe one Anthropic model to check whether it is reachable on this project
- * and region.
- *
- * Sends a minimal POST to `:rawPredict` with an empty messages array. The
- * response status tells us:
- * - **400** — model exists (bad request because the body is intentionally
- *   minimal)
- * - **404** — model is not served in this location or does not exist
- * - **200** — model exists (unlikely with an empty body, but still valid)
- * - **401/403** — credential issue; treated as "unknown", kept in the list
- * - other — treated as "unknown", kept in the list
- *
- * Only a definitive 404 removes a model from the catalog.
- * @param model - model id to probe.
- * @param project - Google Cloud project id.
- * @param location - region, or `global`.
- * @param token - bearer token.
- * @param fetchFn - transport.
- * @param signal - caller cancellation.
- * @returns true if the model is reachable (or status is ambiguous).
- */
-async function probeAnthropicModel(
-  model: string,
-  project: string,
-  location: string,
-  token: string,
-  fetchFn: FetchLike,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  try {
-    const response = await fetchFn(anthropicProbeUrl(project, location, model), {
-      method: 'POST',
-      headers: {
-        'authorization': `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        anthropic_version: 'vertex-2023-10-16',
-        max_tokens: 1,
-        messages: [],
-      }),
-      ...signal === undefined ? {} : { signal },
-    })
-    // Consume the body to free the connection.
-    await response.text().catch(() => {})
-    // 404 = model not found. Everything else (400, 200, 429, 500) = exists.
-    return response.status !== 404
-  } catch {
-    // Network error — keep the model in the list rather than silently dropping it.
-    return true
-  }
-}
-
-/**
- * Probe the hardcoded Anthropic model catalog against Vertex and return only
- * the models that are actually reachable.
- * @param candidates - the hardcoded model catalog to validate.
- * @param project - Google Cloud project id.
- * @param location - region, or `global`.
- * @param tokens - token source for bearer authentication.
- * @param fetchFn - transport.
- * @param signal - caller cancellation.
- * @returns the subset of candidates that responded with anything other than 404.
- */
-export async function probeAnthropicModels(
-  candidates: readonly VertexModel[],
-  project: string,
-  location: string,
-  tokens: TokenProvider,
-  fetchFn: FetchLike,
-  signal?: AbortSignal,
-): Promise<readonly VertexModel[]> {
-  if (candidates.length === 0) return candidates
-  const bearer = await tokens.get(signal)
-  // The catalog is a handful of ids; one probe per id, all at once.
-  const probes = candidates.map(model =>
-    probeAnthropicModel(model.id, project, location, bearer, fetchFn, signal))
-  const results = await Promise.all(probes)
-  return candidates.filter((_, index) => results[index])
-}
-
-/**
  * A cached, TTL-bounded model list that falls back to a static default when
  * the remote fetch fails.
  *
- * Both adapters use one of these: the Gemini adapter fetches from the catalog
- * API, and the Anthropic adapter uses the static default (since Vertex has no
- * Anthropic model listing endpoint).
+ * Only the Gemini adapter fetches: Vertex has no Anthropic model listing
+ * endpoint, so that route serves its configured catalog without one and never
+ * calls this.
  */
-export class ModelCache<T> {
-  readonly #fallback: readonly T[]
-  #cached: CachedModels<T> | undefined
-  #inflight: Promise<readonly T[]> | undefined
+export class ModelCache {
+  readonly #fallback: readonly VertexModel[]
+  #cached: CachedModels | undefined
+  #inflight: Promise<readonly VertexModel[]> | undefined
 
   /**
    * @param fallback - static default returned when the fetch fails or is not
    *   attempted.
    */
-  constructor(fallback: readonly T[]) {
+  constructor(fallback: readonly VertexModel[]) {
     this.#fallback = fallback
   }
 
@@ -290,7 +189,7 @@ export class ModelCache<T> {
    * @param fetchFn - optional async function that returns a fresh model list.
    * @returns the model list, from cache, fetch, or fallback.
    */
-  async get(fetchFn?: () => Promise<readonly T[]>): Promise<readonly T[]> {
+  async get(fetchFn?: () => Promise<readonly VertexModel[]>): Promise<readonly VertexModel[]> {
     // Return cached if still valid.
     const cached = this.#cached
     if (cached !== undefined && Date.now() < cached.expiresAt) return cached.models
