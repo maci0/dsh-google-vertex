@@ -68,8 +68,8 @@ export interface AdapterMetadata<C extends VertexAdapterConfig> {
     readonly providerName: string;
     /** Catalogue this route advertises, in picker order. */
     readonly catalog: readonly VertexModel[];
-    /** Context window and output cap reported for one model id. */
-    readonly capacityFor: (model: string, config: C) => {
+    /** Context window and output cap reported for every model on this route. */
+    readonly capacity: {
         contextWindow: number;
         defaultMaxTokens: number;
     };
@@ -94,14 +94,16 @@ export declare function transportFinish(options: GenerateOptions, error: unknown
  * `handle` is the only method that can emit a terminal chunk — an Anthropic
  * `message_stop` and a Gemini in-band error both do. `terminal` then reports
  * that it, or the watchdog, already ended the turn, so the pump never adds a
- * second finish. `sawFinish` is the narrower question the end of the body asks:
- * did the provider itself report that the turn was complete? A stream that ends
- * without one is truncated, whatever its route calls that condition.
+ * second finish. A route whose terminal event is not the only way a body ends
+ * — Gemini streams whole chunks and simply stops — narrows the truncation
+ * question with `sawFinish`: did the provider itself report that the turn was
+ * complete? A stream that ends without one is truncated. When absent, the pump
+ * falls back to `terminal`.
  */
 export interface StreamTranslatorLike {
     handle(event: Record<string, unknown>): Iterable<StreamChunk>;
     readonly terminal: boolean;
-    readonly sawFinish: boolean;
+    readonly sawFinish?: boolean;
     /** Terminal chunks a provider that closes its body with data needs. */
     finish?(): Iterable<StreamChunk>;
 }
@@ -110,7 +112,7 @@ export interface StreamPumpOptions<C extends VertexAdapterConfig> {
     /** The request URL for the chosen model. */
     readonly endpoint: (model: string, config: C) => string;
     /** The request body for the chosen model. */
-    readonly body: (options: GenerateOptions, model: string, config: C) => unknown;
+    readonly body: (options: GenerateOptions, config: C) => unknown;
     /** Failure named when the body ended without the provider's finish. */
     readonly truncatedMessage: (model: string) => string;
 }

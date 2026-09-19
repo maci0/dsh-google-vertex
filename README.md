@@ -49,7 +49,7 @@ Override the row by id in `~/.dsh/profiles/web/cordis.patch.yml`:
 | `maxTokens` | `32000` | Claude output cap applied when a caller omits one. |
 | `streamIdleTimeoutMs` | `300000` | Bound on the interval between two stream reads, on both routes. |
 
-The four environment names are read from the launcher's environment snapshot (`@deepseek-ai/dsh-launch-environment`), which layers the inherited process environment, the invoking directory's `.env`, and the Harness home's `.env` in that trust order. A composition without that service reads `process.env` instead.
+Environment variables are read from `process.env` of the harness process.
 
 ## Routes and models
 
@@ -147,7 +147,7 @@ npm run typecheck  # tsc -p tsconfig.json
 
 The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `npm run build` before it takes effect. A profile that installs the package as a local link (`dsh plugin --profile web add link:/path/to/dsh-google-vertex`) picks up a local edit plus that build after a `dsh web` restart; a profile that installs it from a git spec needs the commit pushed and `dsh plugin --profile web update dsh-google-vertex` instead. `lib/client.js` is the exception either way: the browser half is authored directly as plain JavaScript in the client module loader's factory format and is not produced by `tsc`.
 
-Coverage: the signed assertion, token caching and refresh, both auth failure classes, request projection, cache breakpoints, Gemini request projection with signature replay, SSE framing across split chunks, every terminal finish class — including the stream idle bound and an in-band provider error envelope — usage reported only when the provider reported it, and configuration validation. A real Cordis `Context` mount proves both routes are registered and withdrawn with the fiber, that the launch-environment snapshot is the fallback source, and that the plugin's settings change drops both cached catalogs. The browser half is evaluated from `lib/client.js` through the module loader's own registration format, which is how its slot, its Refresh control, and its write are covered without a browser.
+Coverage: the signed assertion, token caching and refresh, both auth failure classes, request projection, cache breakpoints, Gemini request projection with signature replay, SSE framing across split chunks, every terminal finish class — including the stream idle bound and an in-band provider error envelope — usage reported only when the provider reported it, and configuration validation. A real Cordis `Context` mount proves both routes are registered and withdrawn with the fiber, and that the plugin's settings change drops both cached catalogs. The browser half is evaluated from `lib/client.js` through the module loader's own registration format, which is how its slot, its Refresh control, and its write are covered without a browser.
 
 Requires Node `^22.19.0 || >=24.0.0`.
 

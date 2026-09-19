@@ -6,9 +6,9 @@
  */
 
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { mock, test } from 'node:test'
 
-import { fetchGeminiModels, ModelCache, probeAnthropicModels } from '../src/discovery.ts'
+import { DEFAULT_CACHE_TTL_MS, fetchGeminiModels, ModelCache, probeAnthropicModels } from '../src/discovery.ts'
 import type { FetchLike } from '../src/auth.ts'
 
 // ---------------------------------------------------------------------------
@@ -90,8 +90,7 @@ test('ModelCache shares concurrent in-flight fetches', async () => {
 test('ModelCache respects TTL expiry', async () => {
   const fallback = [{ id: 'x', name: 'X' }]
   let calls = 0
-  // TTL of 1ms for testing.
-  const cache = new ModelCache(fallback, 1)
+  const cache = new ModelCache(fallback)
   const fetchFn = async () => {
     calls += 1
     return [{ id: `v${calls}`, name: `V${calls}` }]
@@ -100,9 +99,16 @@ test('ModelCache respects TTL expiry', async () => {
   await cache.get(fetchFn)
   assert.equal(calls, 1)
 
-  // Wait for TTL to expire.
-  await new Promise(resolve => setTimeout(resolve, 10))
-  await cache.get(fetchFn)
+  // Advance the clock past the five-minute TTL. The mocked clock starts at the
+  // epoch, so anchor it to the real time of the first fetch first.
+  const start = Date.now()
+  mock.timers.enable({ apis: ['Date'] })
+  try {
+    mock.timers.setTime(start + DEFAULT_CACHE_TTL_MS + 1)
+    await cache.get(fetchFn)
+  } finally {
+    mock.timers.reset()
+  }
   assert.equal(calls, 2)
 })
 

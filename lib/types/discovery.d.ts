@@ -13,6 +13,8 @@
  */
 import type { FetchLike } from './auth.ts';
 import type { TokenProvider, VertexModel } from './adapter.ts';
+/** How long a cached model list stays valid, in milliseconds. */
+export declare const DEFAULT_CACHE_TTL_MS: number;
 /**
  * Fetch all Gemini models from the Vertex publishers/google/models endpoint.
  *
@@ -27,9 +29,6 @@ export declare function fetchGeminiModels(location: string, tokens: TokenProvide
 /**
  * Probe the hardcoded Anthropic model catalog against Vertex and return only
  * the models that are actually reachable.
- *
- * Probes run with bounded concurrency so a large catalog does not overwhelm
- * the endpoint.
  * @param candidates - the hardcoded model catalog to validate.
  * @param project - Google Cloud project id.
  * @param location - region, or `global`.
@@ -52,9 +51,8 @@ export declare class ModelCache<T> {
     /**
      * @param fallback - static default returned when the fetch fails or is not
      *   attempted.
-     * @param ttlMs - cache lifetime in milliseconds; defaults to 5 minutes.
      */
-    constructor(fallback: readonly T[], ttlMs?: number);
+    constructor(fallback: readonly T[]);
     /**
      * Return the cached model list, or fetch a fresh one.
      *

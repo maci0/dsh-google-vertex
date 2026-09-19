@@ -93,8 +93,8 @@ export interface AdapterMetadata<C extends VertexAdapterConfig> {
   readonly providerName: string
   /** Catalogue this route advertises, in picker order. */
   readonly catalog: readonly VertexModel[]
-  /** Context window and output cap reported for one model id. */
-  readonly capacityFor: (model: string, config: C) => { contextWindow: number; defaultMaxTokens: number }
+  /** Context window and output cap reported for every model on this route. */
+  readonly capacity: { contextWindow: number; defaultMaxTokens: number }
   /** Model description reported for this route, project and region included. */
   readonly describe: (name: string, config: C) => string
 }
@@ -158,14 +158,16 @@ export function transportFinish(options: GenerateOptions, error: unknown): Strea
  * `handle` is the only method that can emit a terminal chunk — an Anthropic
  * `message_stop` and a Gemini in-band error both do. `terminal` then reports
  * that it, or the watchdog, already ended the turn, so the pump never adds a
- * second finish. `sawFinish` is the narrower question the end of the body asks:
- * did the provider itself report that the turn was complete? A stream that ends
- * without one is truncated, whatever its route calls that condition.
+ * second finish. A route whose terminal event is not the only way a body ends
+ * — Gemini streams whole chunks and simply stops — narrows the truncation
+ * question with `sawFinish`: did the provider itself report that the turn was
+ * complete? A stream that ends without one is truncated. When absent, the pump
+ * falls back to `terminal`.
  */
 export interface StreamTranslatorLike {
   handle(event: Record<string, unknown>): Iterable<StreamChunk>
   readonly terminal: boolean
-  readonly sawFinish: boolean
+  readonly sawFinish?: boolean
   /** Terminal chunks a provider that closes its body with data needs. */
   finish?(): Iterable<StreamChunk>
 }
@@ -175,7 +177,7 @@ export interface StreamPumpOptions<C extends VertexAdapterConfig> {
   /** The request URL for the chosen model. */
   readonly endpoint: (model: string, config: C) => string
   /** The request body for the chosen model. */
-  readonly body: (options: GenerateOptions, model: string, config: C) => unknown
+  readonly body: (options: GenerateOptions, config: C) => unknown
   /** Failure named when the body ended without the provider's finish. */
   readonly truncatedMessage: (model: string) => string
 }
@@ -265,7 +267,7 @@ export async function* streamVertex(
         ...attributionHeaders(),
         'authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify(pump.body(options, model, config)),
+      body: JSON.stringify(pump.body(options, config)),
       signal,
     })
   } catch (error) {
@@ -330,7 +332,7 @@ export async function* streamVertex(
   // The body ended without the provider's own finish: a truncated response,
   // which is the more specific account of a turn the caller or the watchdog
   // already ended.
-  if (!translator.sawFinish) {
+  if (!(translator.sawFinish ?? translator.terminal)) {
     yield errorFinish({ message: pump.truncatedMessage(model), code: 'TRANSPORT' })
     return
   }
@@ -432,7 +434,7 @@ export abstract class VertexPublisherAdapter<C extends VertexAdapterConfig> impl
 
   /** {@inheritDoc LlmAdapterLike.resolveModel} */
   resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
-    const capacity = this.#metadata.capacityFor(model, this.#config)
+    const capacity = this.#metadata.capacity
     return Promise.resolve({
       ...this.#info(provider, model),
       context: { contextWindow: capacity.contextWindow },
@@ -484,10 +486,7 @@ export class GoogleVertexAnthropicAdapter extends VertexPublisherAdapter<VertexA
     super({
       providerName: 'Google Vertex AI (Anthropic)',
       catalog: config.models,
-      capacityFor: (_model, _config) => ({
-        contextWindow: config.contextWindow,
-        defaultMaxTokens: config.maxTokens,
-      }),
+      capacity: { contextWindow: config.contextWindow, defaultMaxTokens: config.maxTokens },
       describe: (_name, row) =>
         `Google-hosted Anthropic model on Vertex AI (project ${row.project}, ${row.location}).`,
     }, config, options)
@@ -503,7 +502,7 @@ export class GoogleVertexAnthropicAdapter extends VertexPublisherAdapter<VertexA
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     yield * streamVertex(this.config, options, this.fetch, this.tokens, () => new StreamTranslator(), {
       endpoint: (model, config) => endpointFor(config.project, config.location, model),
-      body: (request, _model, config) => buildRequestBody(request, config),
+      body: (request, config) => buildRequestBody(request, config),
       truncatedMessage: model => `google-vertex: model "${model}" stream ended before message_stop`,
     })
   }

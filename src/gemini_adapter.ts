@@ -66,7 +66,7 @@ export class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<GeminiAdap
     super({
       providerName: 'Google Vertex AI (Gemini)',
       catalog: config.models,
-      capacityFor: () => GEMINI_CAPACITY,
+      capacity: GEMINI_CAPACITY,
       describe: (_name, row) =>
         `Google Gemini on Vertex AI (project ${row.project}, ${row.location}).`,
     }, config, options)
@@ -85,11 +85,7 @@ export class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<GeminiAdap
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     yield * streamVertex(this.config, options, this.fetch, this.tokens, model => new GeminiStreamTranslator(model), {
       endpoint: (model, config) => geminiEndpointFor(config.project, config.location, model),
-      body: (request, _model, config) => buildGeminiRequest(request, {
-        project: config.project,
-        location: config.location,
-        maxTokens: config.maxTokens,
-      }),
+      body: (request, config) => buildGeminiRequest(request, config),
       truncatedMessage: model => `google-vertex: model "${model}" stream ended before a finish reason`,
     })
   }

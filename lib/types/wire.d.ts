@@ -247,10 +247,6 @@ export declare class StreamTranslator {
      */
     handle(event: Record<string, unknown>): StreamChunk[];
     /** True once a terminal event arrived, so the adapter can tell truncation. */
-    get done(): boolean;
-    /** {@inheritDoc StreamTranslatorLike.terminal} */
     get terminal(): boolean;
-    /** {@inheritDoc StreamTranslatorLike.sawFinish} */
-    get sawFinish(): boolean;
 }
 export {};

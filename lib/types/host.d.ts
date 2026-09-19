@@ -211,12 +211,6 @@ export interface HostContext {
         warn(message: unknown): void;
     };
     /**
-     * Cordis's service/context lookup. Present on every real host context; a
-     * bare test host may omit it, in which case the plugin reads the inherited
-     * `process.env` directly.
-     */
-    get?(name: string): unknown;
-    /**
      * Cordis's `ctx.inject`: run `callback` once every named service is mounted.
      * Present on every real host context; a bare test host may omit it, in which
      * case the plugin mounts without the settings namespace.

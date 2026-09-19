@@ -212,7 +212,7 @@ test('a text turn emits start, deltas, an authoritative block-end, usage, and fi
     { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 11, output_tokens: 9 } },
     { type: 'message_stop' },
   ])
-  assert.equal(translator.done, true)
+  assert.equal(translator.terminal, true)
   assert.deepEqual(chunks, [
     { type: 'block-start', index: 0, blockType: 'text' },
     { type: 'text-delta', index: 0, text: '1' },
@@ -266,7 +266,7 @@ test('a stream-level error event is a terminal failure chunk', () => {
     { type: 'message_start', message: { usage: { input_tokens: 1 } } },
     { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } },
   ])
-  assert.equal(translator.done, true)
+  assert.equal(translator.terminal, true)
   assert.deepEqual(chunks, [{
     type: 'finish',
     reason: { kind: 'error', failure: { message: 'google-vertex: Overloaded', code: 'SERVER' } },

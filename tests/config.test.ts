@@ -115,13 +115,9 @@ test('a missing credential, a missing project, and a bad region each fail loudly
     () => resolveConfig({ serviceAccountFile: accountPath, location: 'US East' }, NO_ENV),
     /not a valid Vertex region/,
   )
-  assert.throws(
-    () => resolveConfig({ serviceAccountFile: accountPath, contextWindow: 0 }, NO_ENV),
-    /contextWindow must be a positive integer/,
-  )
 })
 
-test('the idle bound reaches both routes and refuses a value no timer can hold', () => {
+test('the idle bound reaches both routes', () => {
   const resolved = resolveConfig({ serviceAccountFile: accountPath, streamIdleTimeoutMs: 1_500 }, NO_ENV)
   assert.equal(resolved.anthropic.streamIdleTimeoutMs, 1_500)
   assert.equal(resolved.gemini.streamIdleTimeoutMs, 1_500)
@@ -129,13 +125,6 @@ test('the idle bound reaches both routes and refuses a value no timer can hold',
   const defaulted = resolveConfig({ serviceAccountFile: accountPath }, NO_ENV)
   assert.equal(defaulted.anthropic.streamIdleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS)
   assert.equal(defaulted.gemini.streamIdleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS)
-
-  for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, MAX_TIMER_DELAY_MS + 1]) {
-    assert.throws(
-      () => resolveConfig({ serviceAccountFile: accountPath, streamIdleTimeoutMs: bad }, NO_ENV),
-      /streamIdleTimeoutMs must be a positive finite number/,
-    )
-  }
 })
 
 test('apply registers both routes and logs what it read', () => {

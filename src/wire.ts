@@ -15,6 +15,7 @@
  * @module dsh-google-vertex/wire
  */
 
+import { systemParts as collectSystemParts, takeCounters, toolInput } from './wire-shared.ts'
 import type {
   ContentBlock,
   FinishReason,
@@ -158,19 +159,6 @@ export function resultText(blocks: readonly ContentBlock[]): string {
   return joined.length > 0 ? joined : '(no output)'
 }
 
-/** Parse a model-produced arguments string into the object Vertex requires. */
-function toolInput(argumentsJson: string): unknown {
-  try {
-    const parsed: unknown = JSON.parse(argumentsJson)
-    return typeof parsed === 'object' && parsed !== null ? parsed : {}
-  } catch {
-    // The harness assembles these strings from the model's own deltas; an
-    // unparseable one is a provider-side truncation, and an empty object keeps
-    // the turn revisable instead of failing the whole request.
-    return {}
-  }
-}
-
 /** Ensure a tool's JSON Schema is one Anthropic accepts. */
 function inputSchema(parameters: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -180,19 +168,6 @@ function inputSchema(parameters: Record<string, unknown>): Record<string, unknow
       ? parameters['properties']
       : {},
   }
-}
-
-/** System-role text this request carries, in assembly order. */
-function systemText(options: GenerateOptions): string[] {
-  const parts: string[] = []
-  if (options.system !== undefined && options.system.length > 0) parts.push(options.system)
-  for (const message of options.messages) {
-    if (message.role !== 'system') continue
-    for (const block of message.content) {
-      if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) parts.push(block.text)
-    }
-  }
-  return parts
 }
 
 /** Project one non-system harness message onto its wire content. */
@@ -253,7 +228,7 @@ export function buildRequestBody(options: GenerateOptions, config: VertexWireCon
     else messages.push({ role, content })
   }
 
-  const systemParts = systemText(options)
+  const systemParts = collectSystemParts(options)
   const system: WireTextBlock[] = systemParts.map(text => ({ type: 'text', text }))
   const tools: WireTool[] = (options.tools ?? []).map((tool: ToolSchema) => ({
     name: tool.name,
@@ -559,25 +534,27 @@ export async function* streamSseRecords(
 ): AsyncGenerator<Record<string, unknown>> {
   const buffer = new SseBuffer()
   const decoder = new TextDecoder()
-  /** Parse one record and hand it on when it carried a payload. */
-  function* payload(record: string): Generator<Record<string, unknown>> {
-    const event = parseSseRecord(record)
-    if (event !== undefined) yield event
-  }
   try {
     hooks.armIdle()
     for await (const chunk of body) {
       hooks.clearIdle()
       for (const record of buffer.push(decoder.decode(chunk, { stream: true }))) {
-        yield * payload(record)
+        const event = parseSseRecord(record)
+        if (event !== undefined) yield event
       }
       hooks.armIdle()
     }
     // The decoder holds a partial character and the buffer a partial record;
     // both belong to the body that just ended.
-    for (const record of buffer.push(decoder.decode())) yield * payload(record)
+    for (const record of buffer.push(decoder.decode())) {
+      const event = parseSseRecord(record)
+      if (event !== undefined) yield event
+    }
     const trailing = buffer.flush()
-    if (trailing !== undefined) yield * payload(trailing)
+    if (trailing !== undefined) {
+      const event = parseSseRecord(trailing)
+      if (event !== undefined) yield event
+    }
   } finally {
     hooks.clearIdle()
   }
@@ -598,11 +575,6 @@ interface PartialBlock {
 function eventIndex(event: Record<string, unknown>): number | undefined {
   const index = event['index']
   return typeof index === 'number' && Number.isSafeInteger(index) && index >= 0 ? index : undefined
-}
-
-/** A count field, ignoring anything the provider sends that is not a number. */
-function count(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
 /**
@@ -777,18 +749,12 @@ export class StreamTranslator {
 
   /** Merge the newest cumulative usage counters. */
   #mergeUsage(raw: unknown): void {
-    if (typeof raw !== 'object' || raw === null) return
-    const usage = raw as Record<string, unknown>
-    const input = count(usage['input_tokens'])
-    const output = count(usage['output_tokens'])
-    const cacheRead = count(usage['cache_read_input_tokens'])
-    const cacheWrite = count(usage['cache_creation_input_tokens'])
-    const merged: WireUsage = {
-      ...input === undefined ? {} : { input_tokens: input },
-      ...output === undefined ? {} : { output_tokens: output },
-      ...cacheRead === undefined ? {} : { cache_read_input_tokens: cacheRead },
-      ...cacheWrite === undefined ? {} : { cache_creation_input_tokens: cacheWrite },
-    }
+    const merged = takeCounters(raw, [
+      'input_tokens',
+      'output_tokens',
+      'cache_read_input_tokens',
+      'cache_creation_input_tokens',
+    ]) as Partial<WireUsage>
     // Only a counter the provider actually sent counts as a report.
     if (Object.keys(merged).length === 0) return
     this.#usageReported = true
@@ -796,17 +762,7 @@ export class StreamTranslator {
   }
 
   /** True once a terminal event arrived, so the adapter can tell truncation. */
-  get done(): boolean {
-    return this.#done
-  }
-
-  /** {@inheritDoc StreamTranslatorLike.terminal} */
   get terminal(): boolean {
-    return this.#done
-  }
-
-  /** {@inheritDoc StreamTranslatorLike.sawFinish} */
-  get sawFinish(): boolean {
     return this.#done
   }
 }

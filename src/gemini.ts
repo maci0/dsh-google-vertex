@@ -18,6 +18,7 @@ import type {
   StreamChunk,
   TokenUsage,
 } from './host.ts'
+import { systemParts, takeCounters, toolInput } from './wire-shared.ts'
 import { EMPTY_RESPONSE_CODE, endpointOrigin, failureForEvent, resultText } from './wire.ts'
 
 /** Harness code reported when the provider refused on safety grounds. */
@@ -203,16 +204,6 @@ export function readGeminiReplay(message: Message, model: string): readonly Gemi
   return blocks
 }
 
-/** Parse a model-produced arguments string into the object Gemini requires. */
-function toolInput(argumentsJson: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(argumentsJson)
-    return asObject(parsed) ?? {}
-  } catch {
-    return {}
-  }
-}
-
 /** Every tool-call id in this request, mapped to the tool's name. */
 function toolNames(messages: readonly Message[]): Map<string, string> {
   const names = new Map<string, string>()
@@ -222,19 +213,6 @@ function toolNames(messages: readonly Message[]): Map<string, string> {
     }
   }
   return names
-}
-
-/** System text this request carries, in assembly order. */
-function systemText(options: GenerateOptions): string {
-  const parts: string[] = []
-  if (options.system !== undefined && options.system.length > 0) parts.push(options.system)
-  for (const message of options.messages) {
-    if (message.role !== 'system') continue
-    for (const block of message.content) {
-      if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) parts.push(block.text)
-    }
-  }
-  return parts.join('\n\n')
 }
 
 /** Project one assistant message onto Gemini parts, signatures included. */
@@ -313,7 +291,7 @@ export function buildGeminiRequest(options: GenerateOptions, config: GeminiWireC
     else contents.push({ role, parts })
   }
 
-  const system = systemText(options)
+  const system = systemParts(options).join('\n\n')
   const tools: GeminiToolDeclaration[] = (options.tools ?? []).map(tool => ({
     name: tool.name,
     description: tool.description,
@@ -549,22 +527,13 @@ export class GeminiStreamTranslator {
 
   /** Merge the newest cumulative usage counters. */
   #mergeUsage(usage: Record<string, unknown>): void {
-    const take = (name: string): number | undefined => {
-      const value = usage[name]
-      return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
-    }
-    const prompt = take('promptTokenCount')
-    const candidates = take('candidatesTokenCount')
-    const cached = take('cachedContentTokenCount')
-    const thoughts = take('thoughtsTokenCount')
-    const total = take('totalTokenCount')
-    const merged: GeminiUsageMetadata = {
-      ...prompt === undefined ? {} : { promptTokenCount: prompt },
-      ...candidates === undefined ? {} : { candidatesTokenCount: candidates },
-      ...cached === undefined ? {} : { cachedContentTokenCount: cached },
-      ...thoughts === undefined ? {} : { thoughtsTokenCount: thoughts },
-      ...total === undefined ? {} : { totalTokenCount: total },
-    }
+    const merged = takeCounters(usage, [
+      'promptTokenCount',
+      'candidatesTokenCount',
+      'cachedContentTokenCount',
+      'thoughtsTokenCount',
+      'totalTokenCount',
+    ]) as Partial<GeminiUsageMetadata>
     // Only a counter the provider actually sent counts as a report.
     if (Object.keys(merged).length === 0) return
     this.#usageReported = true

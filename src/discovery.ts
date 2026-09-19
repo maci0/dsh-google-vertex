@@ -16,11 +16,8 @@ import type { FetchLike } from './auth.ts'
 import type { TokenProvider, VertexModel } from './adapter.ts'
 import { endpointOrigin } from './wire.ts'
 
-/** Concurrency limit for Anthropic model probes. */
-const PROBE_CONCURRENCY = 4
-
 /** How long a cached model list stays valid, in milliseconds. */
-const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000
+export const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000
 
 /** Vertex API version for the model list endpoint. */
 const API_VERSION = 'v1'
@@ -238,9 +235,6 @@ async function probeAnthropicModel(
 /**
  * Probe the hardcoded Anthropic model catalog against Vertex and return only
  * the models that are actually reachable.
- *
- * Probes run with bounded concurrency so a large catalog does not overwhelm
- * the endpoint.
  * @param candidates - the hardcoded model catalog to validate.
  * @param project - Google Cloud project id.
  * @param location - region, or `global`.
@@ -259,27 +253,10 @@ export async function probeAnthropicModels(
 ): Promise<readonly VertexModel[]> {
   if (candidates.length === 0) return candidates
   const bearer = await tokens.get(signal)
-
-  // Probe with bounded concurrency.
-  const results: boolean[] = new Array(candidates.length)
-  let cursor = 0
-
-  async function worker(): Promise<void> {
-    while (cursor < candidates.length) {
-      const index = cursor++
-      const model = candidates[index] as VertexModel
-      results[index] = await probeAnthropicModel(
-        model.id, project, location, bearer, fetchFn, signal,
-      )
-    }
-  }
-
-  const workers = Array.from(
-    { length: Math.min(PROBE_CONCURRENCY, candidates.length) },
-    () => worker(),
-  )
-  await Promise.all(workers)
-
+  // The catalog is a handful of ids; one probe per id, all at once.
+  const probes = candidates.map(model =>
+    probeAnthropicModel(model.id, project, location, bearer, fetchFn, signal))
+  const results = await Promise.all(probes)
   return candidates.filter((_, index) => results[index])
 }
 
@@ -293,18 +270,15 @@ export async function probeAnthropicModels(
  */
 export class ModelCache<T> {
   readonly #fallback: readonly T[]
-  readonly #ttlMs: number
   #cached: CachedModels<T> | undefined
   #inflight: Promise<readonly T[]> | undefined
 
   /**
    * @param fallback - static default returned when the fetch fails or is not
    *   attempted.
-   * @param ttlMs - cache lifetime in milliseconds; defaults to 5 minutes.
    */
-  constructor(fallback: readonly T[], ttlMs = DEFAULT_CACHE_TTL_MS) {
+  constructor(fallback: readonly T[]) {
     this.#fallback = fallback
-    this.#ttlMs = ttlMs
   }
 
   /**
@@ -329,7 +303,7 @@ export class ModelCache<T> {
 
     const operation = fetchFn().then((models) => {
       if (models.length > 0) {
-        this.#cached = { models, expiresAt: Date.now() + this.#ttlMs }
+        this.#cached = { models, expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS }
         return models
       }
       // Empty result — use fallback rather than showing nothing.
