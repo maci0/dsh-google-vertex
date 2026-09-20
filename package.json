@@ -30,6 +30,9 @@
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-plugin-manager"
       ]
+    },
+    "compatibility": {
+      "dsh": ">=0.1.0-rc.8 <0.2.0"
     }
   },
   "files": [
@@ -81,5 +84,9 @@
     "@deepseek-ai/schemastery": "3.18.2",
     "@types/node": "^22.20.2",
     "typescript": "^7.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maci0/dsh-google-vertex.git"
   }
 }
