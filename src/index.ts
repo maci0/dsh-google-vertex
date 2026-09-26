@@ -23,6 +23,7 @@
  * @module dsh-google-vertex
  */
 
+import type { Volatile } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { GoogleVertexAnthropicAdapter } from './adapter.ts'
 import type { VertexAnthropicConfig, VertexModel } from './adapter.ts'
@@ -78,10 +79,11 @@ export const DEFAULT_CONTEXT_WINDOW = 200_000
 export const DEFAULT_MAX_TOKENS = 32_000
 
 /**
- * Configuration accepted from this plugin's row in a profile patch.
+ * Configuration received by the plugin: the row as the exported schema emits
+ * it, so the volatile stamp arrives as a live reference rather than a string.
  *
- * The exported schema is what Cordis validates the row against and fills
- * defaults from; `resolveConfig` then normalizes the validated values.
+ * A profile patch supplies `Options`; `resolveConfig` normalizes one into the
+ * adapter configuration.
  */
 export interface Config {
   /** Service-account JSON path, `~` allowed; defaults to `GOOGLE_APPLICATION_CREDENTIALS`. */
@@ -92,34 +94,37 @@ export interface Config {
    */
   readonly project?: string
   /** Region, or `global` (the default); defaults to `GOOGLE_CLOUD_LOCATION`. */
-  readonly location?: string
+  readonly location: string
   /** Claude model ids to advertise, replacing the built-in catalog. */
-  readonly models?: string[]
+  readonly models: string[]
   /** Gemini model ids to advertise, replacing the built-in catalog. */
-  readonly geminiModels?: string[]
+  readonly geminiModels: string[]
   /**
    * Claude context window reported for every model; defaults to 200000. The
    * Gemini route reports {@link DEFAULT_GEMINI_CONTEXT_WINDOW} for every model
    * it serves, which is why this key has no Gemini counterpart.
    */
-  readonly contextWindow?: number
+  readonly contextWindow: number
   /** Claude output cap applied when a caller omits one; defaults to 32000. */
-  readonly maxTokens?: number
+  readonly maxTokens: number
   /**
    * Bound on the interval between two stream reads on either route; defaults to
    * 300000. A provider that stops sending is reported as `TIMEOUT` instead of
    * holding the turn open forever.
    */
-  readonly streamIdleTimeoutMs?: number
+  readonly streamIdleTimeoutMs: number
   /**
    * Stamp written by the Refresh control; absent until the first manual refresh.
-   * A plain string in the row, and volatile in the schema: the settings document
-   * accepts only volatile fields, so the write commits into the running config
-   * and its `loader/volatile-update` drops both cached catalogs. The host never
-   * reads the value — the write itself is the signal.
+   * Volatile in the schema, so the settings document — which accepts only
+   * volatile fields — commits the write into this running reference and its
+   * `loader/volatile-update` drops both cached catalogs. The host never reads
+   * the value; the write itself is the signal.
    */
-  readonly revalidatedAt?: string
+  readonly revalidatedAt: Volatile<string | undefined>
 }
+
+/** Raw row values accepted from a profile patch, with live references unwrapped. */
+export type Options = { [K in keyof Config]?: Config[K] extends Volatile<infer T> ? T : Config[K] }
 
 /**
  * Row schema: defaults live here, so a deployment only states what it changes.
@@ -157,19 +162,15 @@ interface ResolvedConfig {
  *
  * Invalid values throw rather than being silently defaulted: a typo'd path or
  * project would otherwise present as an opaque provider error mid-turn.
- * @param config - raw row configuration.
+ * @param config - raw row values, as a profile patch or an unwrapped row.
  * @param env - environment consulted for the credential and region defaults.
  * @returns the resolved adapter configuration.
  */
-export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = process.env): ResolvedConfig {
+export function resolveConfig(config: Options = {}, env: NodeJS.ProcessEnv = process.env): ResolvedConfig {
   // The exported schema is the one source of the numeric defaults and bounds.
   // The credential path, the project, and the region keep their environment
   // fallbacks, so they are read off the raw row instead.
-  //
-  // `revalidatedAt` is dropped first: a mounted row carries it as a live
-  // reference the string schema refuses, and the host never reads the value.
-  const { revalidatedAt: _revalidation, ...raw } = config
-  const filled = Config(raw)
+  const filled = Config(config)
   const serviceAccountFile = filled.serviceAccountFile ?? env['GOOGLE_APPLICATION_CREDENTIALS']
   if (serviceAccountFile === undefined || serviceAccountFile.trim().length === 0) {
     throw new Error(
@@ -239,10 +240,13 @@ export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = proc
 /**
  * Mount both adapters.
  * @param ctx - host context; `ctx.llm` must be mounted (`inject` guarantees it).
- * @param config - this plugin's row configuration.
+ * @param config - this plugin's row, as the schema emits it.
  */
-export function apply(ctx: HostContext, config: Config = {}): void {
-  const resolved = resolveConfig(config)
+export function apply(ctx: HostContext, config: Config): void {
+  // The volatile stamp stays a live reference: the schema refuses one, and the
+  // host never reads the value, so the plain row is what gets resolved.
+  const { revalidatedAt: _revalidation, ...row } = config
+  const resolved = resolveConfig(row)
   const { anthropic, gemini } = resolved
 
   // Only the Gemini route discovers: Vertex has no Anthropic listing endpoint,

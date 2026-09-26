@@ -139,12 +139,20 @@ test('the Refresh control writes a field the settings document accepts', () => {
 
 test('a mounted row carries the volatile stamp as a live reference and still resolves', () => {
   // The loader hands `apply` the schema output, where a volatile field is a
-  // reference rather than a string; `resolveConfig` drops it instead of feeding
-  // it to the string schema, which would fail the whole plugin at mount.
+  // reference rather than a string. Mounting must resolve the row without
+  // feeding that reference back to the string schema, which would fail the
+  // whole plugin at mount.
   const mounted = Config({ serviceAccountFile: accountPath, revalidatedAt: '2026-01-01T00:00:00.000Z' })
   assert.equal(mounted.revalidatedAt.get(), '2026-01-01T00:00:00.000Z')
-  const resolved = resolveConfig(mounted as unknown as Config, NO_ENV)
-  assert.equal(resolved.anthropic.project, 'example-project')
+
+  const registered: string[][] = []
+  const ctx = {
+    llm: { registerAdapter: (providers: string[]) => { registered.push(providers); return () => {} } },
+    logger: { info: () => {}, warn: () => {} },
+  } as unknown as HostContext
+
+  apply(ctx, mounted)
+  assert.deepEqual(registered, [[PROVIDER], [GEMINI_PROVIDER]])
 })
 
 test('apply registers both routes and logs what it read', () => {
@@ -155,7 +163,7 @@ test('apply registers both routes and logs what it read', () => {
     logger: { info: (message: unknown) => { logs.push(message) }, warn: () => {} },
   } as unknown as HostContext
 
-  apply(ctx, { serviceAccountFile: accountPath })
+  apply(ctx, Config({ serviceAccountFile: accountPath }))
   assert.deepEqual(registered, [[PROVIDER], [GEMINI_PROVIDER]])
   assert.match(String(logs[0]), /google-vertex-anthropic/)
   assert.match(String(logs[0]), /google-vertex-gemini/)

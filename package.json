@@ -1,6 +1,6 @@
 {
   "name": "dsh-google-vertex",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -54,21 +54,17 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.0.4",
     "@deepseek-ai/dsh-client-locale": "*",
     "@deepseek-ai/dsh-client-ui-plugin-manager": "*",
     "@deepseek-ai/dsh-client-ui-renderer": "*",
-    "@deepseek-ai/dsh-client-ui-settings": "*",
-    "@deepseek-ai/dsh-llm": "*",
-    "@deepseek-ai/schemastery": "*"
+    "@deepseek-ai/dsh-client-ui-settings": "*"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-llm": {
-      "optional": true
-    },
-    "@deepseek-ai/schemastery": {
-      "optional": true
-    },
     "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-plugin-manager": {
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-renderer": {
@@ -76,14 +72,11 @@
     },
     "@deepseek-ai/dsh-client-ui-settings": {
       "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-plugin-manager": {
-      "optional": true
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-llm": "0.1.6-alpha.1",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-llm": "~0.1.7-rc.2",
     "@deepseek-ai/schemastery": "^3.18.4",
     "@types/node": "^22.20.2",
     "typescript": "^7.0.2"
@@ -92,5 +85,9 @@
     "type": "git",
     "url": "https://github.com/maci0/dsh-google-vertex.git"
   },
-  "icon": "./icon.svg"
+  "icon": "./icon.svg",
+  "dependencies": {
+    "@deepseek-ai/dsh-llm": "~0.1.7-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.4"
+  }
 }
