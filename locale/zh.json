@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Google Vertex",
+    "description": "用服务账号调用 Vertex AI 上的 Claude 与 Gemini。"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Google Vertex",
+    "description": "Service-account access to Claude and Gemini on Vertex AI."
+  }
+}

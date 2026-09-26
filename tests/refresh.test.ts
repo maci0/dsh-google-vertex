@@ -103,14 +103,9 @@ test('a committed settings write drops the cached catalog, so the next read re-d
   try {
     const ctx = new Context()
     const llm = new StubLlm(ctx)
-    const settings = new StubSettings(ctx)
+    new StubSettings(ctx)
 
     const fiber = await ctx.plugin(plugin as unknown as Plugin, { serviceAccountFile: accountPath })
-
-    // The browser card is keyed on this namespace; the host half must serve it.
-    assert.deepEqual(settings.installs.map(entry => entry.namespace), [plugin.GOOGLE_VERTEX_SETTINGS_NAMESPACE])
-    const hooks = settings.installs[0]?.hooks
-    assert.ok(hooks, 'the plugin installed its settings section')
 
     const gemini = llm.routes.get(plugin.GEMINI_PROVIDER) as RefreshableAdapter
     const anthropic = llm.routes.get(plugin.PROVIDER) as RefreshableAdapter
@@ -128,8 +123,8 @@ test('a committed settings write drops the cached catalog, so the next read re-d
     assert.ok(claude.length > 0, 'the Claude catalog is served from configuration')
     assert.equal(catalogs, 1, 'the Claude route made no catalog request')
 
-    // The card's write lands here as a committed change.
-    hooks.onChange()
+    // A profile edit of a volatile field lands here.
+    ctx.emit('loader/volatile-update')
 
     await gemini.listModels(plugin.GEMINI_PROVIDER)
     assert.equal(catalogs, 2, 'Gemini re-discovered after the refresh')

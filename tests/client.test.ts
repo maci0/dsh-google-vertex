@@ -76,11 +76,11 @@ function loadBundle(snapshot: Snapshot, writes: unknown[][]) {
   }
   const registeredLocales: string[] = []
 
-  const bound: Record<string, unknown>[] = []
+  const bound: string[] = []
   const injected: string[] = []
   const registered: { entry: Record<string, unknown>; component: Component }[] = []
   const ctx = {
-    settingsScope: { bind: (spec: Record<string, unknown>) => { bound.push(spec); return scope } },
+    configForms: { get: (namespace: string) => { bound.push(namespace); return scope } },
     locale: {
       register: (ns: string, dicts: Record<string, Record<string, string>>): (() => void) => {
         registeredLocales.push(ns)
@@ -165,8 +165,8 @@ function cardOf(registered: { entry: Record<string, unknown>; component: Compone
 test('the card claims the row slot for the google-vertex row and binds the shared namespace', () => {
   const { exported, bound, injected, registered, registeredLocales } = loadBundle(ready({ revalidatedAt: '' }), [])
 
-  assert.deepEqual(exported['inject'], ['slots', 'settingsScope', 'locale'])
-  assert.deepEqual(bound, [{ namespace: 'google-vertex' }])
+  assert.deepEqual(exported['inject'], ['slots', 'configForms', 'locale'])
+  assert.deepEqual(bound, ['google-vertex'])
   assert.deepEqual(injected, ['plugins.row.config'])
   assert.deepEqual(registeredLocales, ['google-vertex'])
   assert.equal(registered[0]?.entry['name'], 'plugins.row.config')

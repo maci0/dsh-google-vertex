@@ -34,10 +34,19 @@ export declare const PROVIDER = "google-vertex-anthropic";
 export declare const GEMINI_PROVIDER = "google-vertex-gemini";
 /**
  * Settings namespace the browser half's card edits — the join key between the
- * two halves. The card registers into `settings.plugin.item` under this key,
+ * two halves. The card registers into `plugins.row.config` under this namespace,
  * and the settings tab pairs the two without knowing what the namespace means.
  */
 export declare const GOOGLE_VERTEX_SETTINGS_NAMESPACE = "google-vertex";
+/**
+ * Persisted state of the browser half's card: when the human last asked for a
+ * manual re-discovery.
+ *
+ * The host never reads the value. A browser half has one channel to this
+ * process — a settings write — so the write itself is the signal: every commit
+ * drops the cached catalogs, and the commit also makes the Web client re-read
+ * the model picker's catalog from the host.
+ */
 /** The one service this plugin needs mounted. */
 export declare const inject: string[];
 /**
@@ -97,7 +106,25 @@ export interface Config {
  * catalog materializes empty, which `resolveConfig` treats exactly like an
  * absent one and replaces with the built-in list.
  */
-export declare const Config: Schema<Config>;
+export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
+    serviceAccountFile: Schema<string, string, "plain">;
+    project: Schema<string, string, "plain">;
+    location: Schema<string, string, "defined">;
+    models: Schema<string[], string[], "plain">;
+    geminiModels: Schema<string[], string[], "plain">;
+    contextWindow: Schema<number, number, "defined">;
+    maxTokens: Schema<number, number, "defined">;
+    streamIdleTimeoutMs: Schema<number, number, "defined">;
+}>>, Schemastery.ObjectT<NoInfer<{
+    serviceAccountFile: Schema<string, string, "plain">;
+    project: Schema<string, string, "plain">;
+    location: Schema<string, string, "defined">;
+    models: Schema<string[], string[], "plain">;
+    geminiModels: Schema<string[], string[], "plain">;
+    contextWindow: Schema<number, number, "defined">;
+    maxTokens: Schema<number, number, "defined">;
+    streamIdleTimeoutMs: Schema<number, number, "defined">;
+}>>, "plain">;
 /** Validated configuration plus the file it was read from. */
 interface ResolvedConfig {
     readonly anthropic: VertexAnthropicConfig;

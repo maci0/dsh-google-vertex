@@ -216,5 +216,7 @@ export interface HostContext {
      * case the plugin mounts without the settings namespace.
      */
     inject?(dependencies: readonly string[], callback: (scope: SettingsContext) => void): unknown;
+    /** Subscribe to a host event. */
+    on?(event: 'loader/volatile-update', listener: () => void): unknown;
 }
 export {};

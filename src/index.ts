@@ -46,7 +46,7 @@ export const GEMINI_PROVIDER = 'google-vertex-gemini'
 
 /**
  * Settings namespace the browser half's card edits — the join key between the
- * two halves. The card registers into `settings.plugin.item` under this key,
+ * two halves. The card registers into `plugins.row.config` under this namespace,
  * and the settings tab pairs the two without knowing what the namespace means.
  */
 export const GOOGLE_VERTEX_SETTINGS_NAMESPACE = 'google-vertex'
@@ -60,10 +60,6 @@ export const GOOGLE_VERTEX_SETTINGS_NAMESPACE = 'google-vertex'
  * drops the cached catalogs, and the commit also makes the Web client re-read
  * the model picker's catalog from the host.
  */
-const VertexSettings = Schema.object({
-  revalidatedAt: Schema.string().default(''),
-})
-
 /** The one service this plugin needs mounted. */
 export const inject = ['llm']
 
@@ -124,6 +120,7 @@ export interface Config {
    * holding the turn open forever.
    */
   readonly streamIdleTimeoutMs?: number
+  /** Stamp written by the Refresh control. A change drops the cached catalogs. */
 }
 
 /**
@@ -134,7 +131,7 @@ export interface Config {
  * catalog materializes empty, which `resolveConfig` treats exactly like an
  * absent one and replaces with the built-in list.
  */
-export const Config: Schema<Config> = Schema.object({
+export const Config = Schema.object({
   serviceAccountFile: Schema.string(),
   project: Schema.string(),
   location: Schema.string().default(DEFAULT_LOCATION),
@@ -254,26 +251,11 @@ export function apply(ctx: HostContext, config: Config = {}): void {
   ctx.llm.registerAdapter([PROVIDER], anthropicAdapter)
   ctx.llm.registerAdapter([GEMINI_PROVIDER], geminiAdapter)
 
-  // The Refresh control in the Web client's plugin card writes this namespace;
-  // the commit drops both cached catalogs, so the picker's next read reaches
-  // Vertex instead of a five-minute-old list. A bare test host has no `inject`.
-  if (typeof ctx.inject === 'function') {
-    ctx.inject(['settings'], (scope) => {
-      scope.settings.installSection(
-        ctx,
-        GOOGLE_VERTEX_SETTINGS_NAMESPACE,
-        VertexSettings,
-        { revalidatedAt: '' },
-        {
-          // Nothing is derived from the stored value here: the cache drop is the
-          // whole effect, and it runs on attach and on every committed change.
-          setSource: () => {},
-          onChange: () => {
-            anthropicAdapter.invalidateModels()
-            geminiAdapter.invalidateModels()
-          },
-        },
-      )
+  // A profile edit of `revalidatedAt` drops both cached catalogs.
+  if (typeof ctx.on === 'function') {
+    ctx.on('loader/volatile-update', () => {
+      anthropicAdapter.invalidateModels()
+      geminiAdapter.invalidateModels()
     })
   }
 
