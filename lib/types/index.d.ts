@@ -38,15 +38,6 @@ export declare const GEMINI_PROVIDER = "google-vertex-gemini";
  * and the settings tab pairs the two without knowing what the namespace means.
  */
 export declare const GOOGLE_VERTEX_SETTINGS_NAMESPACE = "google-vertex";
-/**
- * Persisted state of the browser half's card: when the human last asked for a
- * manual re-discovery.
- *
- * The host never reads the value. A browser half has one channel to this
- * process — a settings write — so the write itself is the signal: every commit
- * drops the cached catalogs, and the commit also makes the Web client re-read
- * the model picker's catalog from the host.
- */
 /** The one service this plugin needs mounted. */
 export declare const inject: string[];
 /**
@@ -97,6 +88,14 @@ export interface Config {
      * holding the turn open forever.
      */
     readonly streamIdleTimeoutMs?: number;
+    /**
+     * Stamp written by the Refresh control; absent until the first manual refresh.
+     * A plain string in the row, and volatile in the schema: the settings document
+     * accepts only volatile fields, so the write commits into the running config
+     * and its `loader/volatile-update` drops both cached catalogs. The host never
+     * reads the value — the write itself is the signal.
+     */
+    readonly revalidatedAt?: string;
 }
 /**
  * Row schema: defaults live here, so a deployment only states what it changes.
@@ -105,6 +104,9 @@ export interface Config {
  * `.default()`: the first two fall back to the environment, and an omitted
  * catalog materializes empty, which `resolveConfig` treats exactly like an
  * absent one and replaces with the built-in list.
+ *
+ * `revalidatedAt` is volatile — the only kind of field the settings document
+ * accepts — and carries no default: absence means "never refreshed manually".
  */
 export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
     serviceAccountFile: Schema<string, string, "plain">;
@@ -115,6 +117,7 @@ export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
     contextWindow: Schema<number, number, "defined">;
     maxTokens: Schema<number, number, "defined">;
     streamIdleTimeoutMs: Schema<number, number, "defined">;
+    revalidatedAt: Schema<string, string, "volatile">;
 }>>, Schemastery.ObjectT<NoInfer<{
     serviceAccountFile: Schema<string, string, "plain">;
     project: Schema<string, string, "plain">;
@@ -124,6 +127,7 @@ export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
     contextWindow: Schema<number, number, "defined">;
     maxTokens: Schema<number, number, "defined">;
     streamIdleTimeoutMs: Schema<number, number, "defined">;
+    revalidatedAt: Schema<string, string, "volatile">;
 }>>, "plain">;
 /** Validated configuration plus the file it was read from. */
 interface ResolvedConfig {

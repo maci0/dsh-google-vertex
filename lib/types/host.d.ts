@@ -181,28 +181,6 @@ export interface LlmAdapterLike {
 interface LlmServiceLike {
     registerAdapter(providers: string[], adapter: LlmAdapterLike): Disposable;
 }
-/** Hooks a consumer hands to `settings.installSection`. */
-export interface SettingsSectionHooksLike {
-    /**
-     * Receive the active configuration source: the resolved settings scope while
-     * one is attached, the composition entry otherwise.
-     */
-    setSource(current: () => unknown): void;
-    /** Re-judge anything derived from the source after an attach, detach, or commit. */
-    onChange(): void;
-}
-/** The `ctx.settings` seam, narrowed to the one call this plugin makes. */
-interface SettingsServiceLike {
-    /**
-     * Register a namespace with the plugin's composition entry as the `base`
-     * layer, falling back to that entry when no provider is mounted.
-     */
-    installSection(owner: unknown, namespace: string, schema: unknown, entry: unknown, hooks: SettingsSectionHooksLike): void;
-}
-/** The service scope a `ctx.inject(['settings'], …)` callback receives. */
-interface SettingsContext extends HostContext {
-    readonly settings: SettingsServiceLike;
-}
 /** The host context slice this plugin touches. */
 export interface HostContext {
     readonly llm: LlmServiceLike;
@@ -211,12 +189,9 @@ export interface HostContext {
         warn(message: unknown): void;
     };
     /**
-     * Cordis's `ctx.inject`: run `callback` once every named service is mounted.
-     * Present on every real host context; a bare test host may omit it, in which
-     * case the plugin mounts without the settings namespace.
+     * Subscribe to a host event. Optional: a bare test host may omit it, in which
+     * case no cached catalog is dropped.
      */
-    inject?(dependencies: readonly string[], callback: (scope: SettingsContext) => void): unknown;
-    /** Subscribe to a host event. */
     on?(event: 'loader/volatile-update', listener: () => void): unknown;
 }
 export {};

@@ -51,15 +51,6 @@ export const GEMINI_PROVIDER = 'google-vertex-gemini'
  */
 export const GOOGLE_VERTEX_SETTINGS_NAMESPACE = 'google-vertex'
 
-/**
- * Persisted state of the browser half's card: when the human last asked for a
- * manual re-discovery.
- *
- * The host never reads the value. A browser half has one channel to this
- * process — a settings write — so the write itself is the signal: every commit
- * drops the cached catalogs, and the commit also makes the Web client re-read
- * the model picker's catalog from the host.
- */
 /** The one service this plugin needs mounted. */
 export const inject = ['llm']
 
@@ -120,7 +111,14 @@ export interface Config {
    * holding the turn open forever.
    */
   readonly streamIdleTimeoutMs?: number
-  /** Stamp written by the Refresh control. A change drops the cached catalogs. */
+  /**
+   * Stamp written by the Refresh control; absent until the first manual refresh.
+   * A plain string in the row, and volatile in the schema: the settings document
+   * accepts only volatile fields, so the write commits into the running config
+   * and its `loader/volatile-update` drops both cached catalogs. The host never
+   * reads the value — the write itself is the signal.
+   */
+  readonly revalidatedAt?: string
 }
 
 /**
@@ -130,6 +128,9 @@ export interface Config {
  * `.default()`: the first two fall back to the environment, and an omitted
  * catalog materializes empty, which `resolveConfig` treats exactly like an
  * absent one and replaces with the built-in list.
+ *
+ * `revalidatedAt` is volatile — the only kind of field the settings document
+ * accepts — and carries no default: absence means "never refreshed manually".
  */
 export const Config = Schema.object({
   serviceAccountFile: Schema.string(),
@@ -140,6 +141,7 @@ export const Config = Schema.object({
   contextWindow: Schema.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
   maxTokens: Schema.number().step(1).min(1).default(DEFAULT_MAX_TOKENS),
   streamIdleTimeoutMs: Schema.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
+  revalidatedAt: Schema.string().volatile(),
 })
 
 /** Validated configuration plus the file it was read from. */
@@ -163,7 +165,11 @@ export function resolveConfig(config: Config = {}, env: NodeJS.ProcessEnv = proc
   // The exported schema is the one source of the numeric defaults and bounds.
   // The credential path, the project, and the region keep their environment
   // fallbacks, so they are read off the raw row instead.
-  const filled = Config(config) as Config & { contextWindow: number; maxTokens: number; streamIdleTimeoutMs: number }
+  //
+  // `revalidatedAt` is dropped first: a mounted row carries it as a live
+  // reference the string schema refuses, and the host never reads the value.
+  const { revalidatedAt: _revalidation, ...raw } = config
+  const filled = Config(raw)
   const serviceAccountFile = filled.serviceAccountFile ?? env['GOOGLE_APPLICATION_CREDENTIALS']
   if (serviceAccountFile === undefined || serviceAccountFile.trim().length === 0) {
     throw new Error(

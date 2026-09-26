@@ -45,7 +45,10 @@ test('the row schema fills the code-side defaults and leaves absent keys absent'
   // empty and `resolveConfig`'s `length === 0` branch keeps the built-in list.
   assert.deepEqual(filled.models, [])
   assert.deepEqual(filled.geminiModels, [])
-  assert.deepEqual(resolveConfig(filled, NO_ENV).anthropic.models, DEFAULT_MODELS)
+  // A mounted row carries the volatile stamp as a live reference; `resolveConfig`
+  // takes the plain row, which is what the loader hands it after unwrapping.
+  const { revalidatedAt: _revalidation, ...plain } = filled
+  assert.deepEqual(resolveConfig(plain, NO_ENV).anthropic.models, DEFAULT_MODELS)
   assert.throws(() => Config({ contextWindow: 0 }), /contextWindow/)
   assert.throws(() => Config({ streamIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 }), /streamIdleTimeoutMs/)
 })
@@ -125,6 +128,23 @@ test('the idle bound reaches both routes', () => {
   const defaulted = resolveConfig({ serviceAccountFile: accountPath }, NO_ENV)
   assert.equal(defaulted.anthropic.streamIdleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS)
   assert.equal(defaulted.gemini.streamIdleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS)
+})
+
+test('the Refresh control writes a field the settings document accepts', () => {
+  // The document edits volatile fields only, so a plain `revalidatedAt` is the
+  // "has no volatile fields" failure that leaves the card's button disabled.
+  const dict = (Config as unknown as { dict: Record<string, { meta: { volatile?: boolean } }> }).dict
+  assert.equal(dict['revalidatedAt']?.meta.volatile, true)
+})
+
+test('a mounted row carries the volatile stamp as a live reference and still resolves', () => {
+  // The loader hands `apply` the schema output, where a volatile field is a
+  // reference rather than a string; `resolveConfig` drops it instead of feeding
+  // it to the string schema, which would fail the whole plugin at mount.
+  const mounted = Config({ serviceAccountFile: accountPath, revalidatedAt: '2026-01-01T00:00:00.000Z' })
+  assert.equal(mounted.revalidatedAt.get(), '2026-01-01T00:00:00.000Z')
+  const resolved = resolveConfig(mounted as unknown as Config, NO_ENV)
+  assert.equal(resolved.anthropic.project, 'example-project')
 })
 
 test('apply registers both routes and logs what it read', () => {

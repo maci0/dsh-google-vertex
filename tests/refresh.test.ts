@@ -23,7 +23,14 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { Plugin } from '@deepseek-ai/cordis'
 
 import * as plugin from '../src/index.ts'
-import type { LlmAdapterLike, SettingsSectionHooksLike } from '../src/host.ts'
+import type { LlmAdapterLike } from '../src/host.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** Volatile config values were committed into the running fiber; owning fiber only. */
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void
+  }
+}
 
 /** The narrowest stand-in for `ctx.llm`, owning routes through the calling fiber. */
 class StubLlm extends Service {
@@ -42,26 +49,6 @@ class StubLlm extends Service {
       }
     })
     return () => void dispose()
-  }
-}
-
-/** A `ctx.settings` that records the section the plugin installs, and nothing else. */
-class StubSettings extends Service {
-  /** One entry per namespace the plugin registered. */
-  readonly installs: { namespace: string; hooks: SettingsSectionHooksLike }[] = []
-
-  constructor(ctx: Context) {
-    super(ctx, 'settings')
-  }
-
-  installSection(
-    _owner: unknown,
-    namespace: string,
-    _schema: unknown,
-    _entry: unknown,
-    hooks: SettingsSectionHooksLike,
-  ): void {
-    this.installs.push({ namespace, hooks })
   }
 }
 
@@ -103,7 +90,6 @@ test('a committed settings write drops the cached catalog, so the next read re-d
   try {
     const ctx = new Context()
     const llm = new StubLlm(ctx)
-    new StubSettings(ctx)
 
     const fiber = await ctx.plugin(plugin as unknown as Plugin, { serviceAccountFile: accountPath })
 
@@ -123,8 +109,8 @@ test('a committed settings write drops the cached catalog, so the next read re-d
     assert.ok(claude.length > 0, 'the Claude catalog is served from configuration')
     assert.equal(catalogs, 1, 'the Claude route made no catalog request')
 
-    // A profile edit of a volatile field lands here.
-    ctx.emit('loader/volatile-update')
+    // A write of the volatile `revalidatedAt` reaches the plugin as this event.
+    ctx.emit('loader/volatile-update', [['revalidatedAt']])
 
     await gemini.listModels(plugin.GEMINI_PROVIDER)
     assert.equal(catalogs, 2, 'Gemini re-discovered after the refresh')
