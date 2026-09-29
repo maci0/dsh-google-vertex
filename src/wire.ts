@@ -213,6 +213,24 @@ function messageContent(message: GenerateOptions['messages'][number]): WireConte
 }
 
 /**
+ * Project one harness `tool`-role message onto the `tool_result` block Vertex
+ * requires in the user turn that follows the assistant's `tool_use`.
+ *
+ * The harness attributes a tool result to the call on the message itself
+ * (`toolCallId`, `isError`); the provider reads both from the block.
+ */
+function toolResultContent(message: GenerateOptions['messages'][number]): WireContentBlock[] {
+  const callId = message.toolCallId
+  if (callId === undefined || callId.length === 0) return messageContent(message)
+  return [{
+    type: 'tool_result',
+    tool_use_id: callId,
+    content: resultText(message.content as readonly ContentBlock[]),
+    ...message.isError === true ? { is_error: true } : {},
+  }]
+}
+
+/**
  * Build the request body for one model call.
  *
  * History is projected block by block, consecutive same-role messages are
@@ -229,7 +247,7 @@ export function buildRequestBody(options: GenerateOptions, config: VertexWireCon
   for (const message of options.messages) {
     if (message.role === 'system') continue
     const role = message.role === 'assistant' ? 'assistant' : 'user'
-    const content = messageContent(message)
+    const content = message.role === 'tool' ? toolResultContent(message) : messageContent(message)
     if (content.length === 0) continue
     const previous = messages.at(-1)
     if (previous !== undefined && previous.role === role) previous.content.push(...content)

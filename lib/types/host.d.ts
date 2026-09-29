@@ -41,8 +41,16 @@ export type ContentBlock = {
 /** One message in a fully-assembled request. */
 export interface Message {
     readonly id: string;
-    readonly role: 'system' | 'user' | 'assistant';
+    /**
+     * The harness carries a tool result as its own `tool`-role message, with the
+     * call identity and error flag on the message rather than in its content.
+     */
+    readonly role: 'system' | 'user' | 'assistant' | 'tool';
     readonly content: readonly ContentBlock[];
+    /** Tool-role only: the provider call id this message answers. */
+    readonly toolCallId?: string;
+    /** Tool-role only: whether the tool invocation failed. */
+    readonly isError?: boolean;
     /**
      * Producer attribution. Only `replayState` is read: an assistant message this
      * adapter produced carries the provider's per-block metadata (Vertex's

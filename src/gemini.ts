@@ -247,6 +247,25 @@ function userParts(message: Message, names: Map<string, string>): GeminiPart[] {
 }
 
 /**
+ * Project one harness `tool`-role message onto the `functionResponse` part
+ * Gemini requires for the `functionCall` it answers.
+ *
+ * The harness puts the call identity on the message, the provider reads it from
+ * the part, and the function name is what Vertex matches a response by.
+ */
+function toolResultParts(message: Message, names: Map<string, string>): GeminiPart[] {
+  const callId = message.toolCallId
+  if (callId === undefined || callId.length === 0) return userParts(message, names)
+  return [{
+    functionResponse: {
+      name: names.get(callId) ?? callId,
+      id: callId,
+      response: { result: resultText((message.content ?? []) as readonly ContentBlock[]) },
+    },
+  }]
+}
+
+/**
  * Build the request body for one model call.
  *
  * History is projected part by part — tool results become `functionResponse`
@@ -266,7 +285,11 @@ export function buildGeminiRequest(options: GenerateOptions, config: VertexWireC
   for (const message of options.messages) {
     if (message.role === 'system') continue
     const role = message.role === 'assistant' ? 'model' : 'user'
-    const parts = role === 'model' ? assistantParts(message, model) : userParts(message, names)
+    const parts = message.role === 'tool'
+      ? toolResultParts(message, names)
+      : role === 'model'
+        ? assistantParts(message, model)
+        : userParts(message, names)
     if (parts.length === 0) continue
     const previous = contents.at(-1)
     if (previous !== undefined && previous.role === role) previous.parts.push(...parts)
