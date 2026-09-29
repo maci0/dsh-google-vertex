@@ -9,7 +9,7 @@ Nothing is copied into the harness credential store: the file is read once at mo
 - Two provider routes from one configuration row — `google-vertex-anthropic` for Claude and `google-vertex-gemini` for Gemini — both in the Web model picker.
 - Service-account auth with no API key: a path in config, or `GOOGLE_APPLICATION_CREDENTIALS`.
 - Streaming with tool calling on both routes. Claude emits raw JSON argument deltas; Gemini emits complete function calls and replays the thought signature Gemini 3 requires.
-- Catalogs discovered from Vertex at runtime — Gemini from the publishers catalog API, Claude by probing its candidates — behind a five-minute cache, with the built-in list as the fallback when the provider cannot be reached.
+- Catalogs discovered from Vertex at runtime — Gemini from the publishers catalog API, Claude served from the configured (or built-in) list — behind a five-minute cache, with the built-in list as the fallback when the provider cannot be reached.
 - A **Refresh models** control on this plugin's row page, which drops both caches and re-reads the model picker without restarting `dsh web`.
 - Claude prompt-cache breakpoints on tools, system, and the final conversation block, with cache read/write counts reported as usage.
 - Failure codes the harness can act on: `429` → `RATE_LIMIT`, `5xx` → `SERVER`, `RESOURCE_EXHAUSTED` → `QUOTA`, oversized → `CONTEXT_WINDOW_EXCEEDED`, a stalled stream → `TIMEOUT`.
@@ -50,7 +50,7 @@ Override the row by id in `~/.dsh/profiles/web/cordis.patch.yml`:
 | `project` | `$GOOGLE_CLOUD_PROJECT`, `$GCLOUD_PROJECT`, then the file's `project_id` | Google Cloud project id, used by both routes. |
 | `location` | `$GOOGLE_CLOUD_LOCATION`, then `global` | Region for both endpoints, or `global` for `aiplatform.googleapis.com`. |
 | `models` | the Claude catalog below | Claude ids to advertise, replacing the built-in catalog. Any id is accepted at request time regardless. |
-| `geminiModels` | the Gemini catalog below | Gemini ids to advertise. A listed id keeps its measured capacities; an unfamiliar one gets the family defaults. |
+| `geminiModels` | the Gemini catalog below | Gemini ids to advertise. Every entry serves the same context/output pair. |
 | `contextWindow` | `200000` | Claude context window reported per model. |
 | `maxTokens` | `32000` | Claude output cap applied when a caller omits one. |
 | `streamIdleTimeoutMs` | `300000` | Bound on the interval between two stream reads, on both routes. |
@@ -76,7 +76,7 @@ Claude defaults — every listed family serves 200k context and caps output at 3
 | Claude Sonnet 4.5 (Vertex) | `claude-sonnet-4-5` |
 | Claude Haiku 4.5 (Vertex) | `claude-haiku-4-5` |
 
-Gemini defaults — each entry carries its own limits, because Vertex's differ per model:
+Gemini defaults — every entry serves the same context/output pair:
 
 | Picker label | Model id | Context | Max output |
 |---|---|---|---|

@@ -70,6 +70,97 @@ test('buildGeminiRequest hoists system text, maps tools, and sends no thinking c
   assert.equal('thinkingConfig' in (body.generationConfig ?? {}), false)
 })
 
+test('the Gemini body drops additionalProperties, which the Vertex Schema message has no field for', () => {
+  // The harness's own tool schemas declare `additionalProperties` on every
+  // nested object (packages/interaction/tool-ask-user/src/index.ts), but
+  // Vertex's `Schema` message has no such field: the endpoint refuses the whole
+  // request with `Invalid JSON payload received. Unknown name
+  // "additionalProperties" at
+  // 'tools[0].function_declarations[0].parameters'`. The official
+  // `@google/genai` converter skips exactly this key for the same reason.
+  const parameters = {
+    type: 'object',
+    properties: {
+      questions: {
+        type: 'array',
+        description: 'Questions to ask before continuing.',
+        items: {
+          type: 'object',
+          additionalProperties: true,
+          properties: {
+            id: { type: 'string', description: 'Stable id for this question.' },
+            multi_select: { type: 'boolean', description: 'Allow more than one option.' },
+          },
+        },
+      },
+    },
+    required: ['questions'],
+  }
+  const body = buildGeminiRequest({
+    model: MODEL,
+    tools: [{ name: 'ask_user_question', description: 'Ask', parameters }],
+    messages: [{ id: '1', role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+  }, CONFIG)
+
+  // Every other key survives verbatim: only the unsupported one is dropped.
+  assert.deepEqual(body.tools?.[0]?.functionDeclarations[0]?.parameters, {
+    type: 'object',
+    properties: {
+      questions: {
+        type: 'array',
+        description: 'Questions to ask before continuing.',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'Stable id for this question.' },
+            multi_select: { type: 'boolean', description: 'Allow more than one option.' },
+          },
+        },
+      },
+    },
+    required: ['questions'],
+  })
+  assert.equal(JSON.stringify(body).includes('additionalProperties'), false)
+})
+
+test('the Gemini body maps oneOf to the nullable/anyOf shape the Schema message carries', () => {
+  // `str_replace_editor` (packages/fs/tool-str-replace-editor/src/index.ts) is a
+  // shipped tool whose parameters use `oneOf` for nullable fields. Vertex's
+  // `Schema` message has no `oneOf` member — it has `anyOf` and `nullable`, and
+  // no null type — so a nullable union becomes `nullable: true` plus its other
+  // branch, and a union of real alternatives becomes `anyOf`. That is the same
+  // rewrite the official `@google/genai` converter applies to `anyOf`.
+  const body = buildGeminiRequest({
+    model: MODEL,
+    tools: [{
+      name: 'str_replace_editor',
+      description: 'edit',
+      parameters: {
+        type: 'object',
+        properties: {
+          file_text: { oneOf: [{ type: 'string' }, { type: 'null' }], description: 'File content.' },
+          view_range: {
+            oneOf: [{ type: 'array', items: { type: 'integer' } }, { type: 'null' }],
+            description: 'Line range.',
+          },
+          either: { oneOf: [{ type: 'string' }, { type: 'integer' }], description: 'Either shape.' },
+        },
+      },
+    }],
+    messages: [{ id: '1', role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+  }, CONFIG)
+
+  assert.deepEqual(body.tools?.[0]?.functionDeclarations[0]?.parameters, {
+    type: 'object',
+    properties: {
+      file_text: { type: 'string', nullable: true, description: 'File content.' },
+      view_range: { type: 'array', items: { type: 'integer' }, nullable: true, description: 'Line range.' },
+      either: { anyOf: [{ type: 'string' }, { type: 'integer' }], description: 'Either shape.' },
+    },
+  })
+  assert.equal(JSON.stringify(body).includes('oneOf'), false)
+})
+
 test('a tool round trip carries the function name and Vertex thought signature', () => {
   const assistant: Message = {
     id: '2',

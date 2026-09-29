@@ -184,7 +184,8 @@ export declare function parseSseRecord(record: string): Record<string, unknown> 
  * Reassembles SSE records from arbitrarily split transport chunks.
  *
  * Line endings are normalized as text arrives, so a `\r\n` split across two
- * chunks still frames one record.
+ * chunks still frames one record: a chunk-final CR is carried over and resolved
+ * against the next chunk's first byte rather than normalized chunk by chunk.
  */
 export declare class SseBuffer {
     #private;

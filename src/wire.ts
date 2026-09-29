@@ -501,10 +501,13 @@ export function parseSseRecord(record: string): Record<string, unknown> | undefi
  * Reassembles SSE records from arbitrarily split transport chunks.
  *
  * Line endings are normalized as text arrives, so a `\r\n` split across two
- * chunks still frames one record.
+ * chunks still frames one record: a chunk-final CR is carried over and resolved
+ * against the next chunk's first byte rather than normalized chunk by chunk.
  */
 export class SseBuffer {
   #buffer = ''
+  /** A trailing CR held back: the next chunk may carry the LF that pairs with it. */
+  #pendingCr = false
 
   /**
    * Absorb one decoded chunk.
@@ -512,9 +515,23 @@ export class SseBuffer {
    * @returns every complete record it completes, in order.
    */
   push(text: string): string[] {
+    // A CR at the end of a chunk cannot be classified yet: it is either the
+    // first half of a CRLF whose LF opens the next chunk, or a lone CR. Holding
+    // it back is what keeps a split CRLF one line ending — normalizing the
+    // chunk on its own would turn the pair into two, framing a phantom record
+    // and cutting a multi-line payload in half.
+    let chunk = text
+    if (this.#pendingCr) {
+      // The held CR is a line ending either way; its LF, if this chunk opens
+      // with one, is consumed by the pair and not a second ending.
+      chunk = `\n${chunk.startsWith('\n') ? chunk.slice(1) : chunk}`
+      this.#pendingCr = false
+    }
+    this.#pendingCr = chunk.endsWith('\r')
+    const content = this.#pendingCr ? chunk.slice(0, -1) : chunk
     // The regex engine is only worth starting when the chunk carries a CR; a
     // body served with bare LF (the common case) is scanned once and kept.
-    this.#buffer += text.includes('\r') ? text.replace(/\r\n?/g, '\n') : text
+    this.#buffer += content.includes('\r') ? content.replace(/\r\n?/g, '\n') : content
     const records = this.#buffer.split('\n\n')
     this.#buffer = records.pop() ?? ''
     return records
@@ -525,8 +542,10 @@ export class SseBuffer {
    * @returns the trailing record, or undefined when the body ended on a boundary.
    */
   flush(): string | undefined {
-    const rest = this.#buffer
+    // A held CR was a lone line ending after all: the body ended before any LF.
+    const rest = this.#pendingCr ? `${this.#buffer}\n` : this.#buffer
     this.#buffer = ''
+    this.#pendingCr = false
     return rest.trim().length > 0 ? rest : undefined
   }
 }

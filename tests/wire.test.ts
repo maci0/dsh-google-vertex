@@ -186,6 +186,20 @@ test('SseBuffer frames records split across transport chunks', () => {
   assert.equal(buffer.flush(), undefined)
 })
 
+test('SseBuffer frames a multi-line data record whose CRLF is split across chunks', () => {
+  // A record whose payload spans two `data:` lines is valid SSE. Normalizing
+  // each chunk on its own turns the boundary's `\r` and `\n` into two line
+  // endings, which splits the record and destroys the payload; the raw pair is
+  // one line ending.
+  const record = 'data: {"a":1,\r\ndata: "b":2}\r\n\r\n'
+  const split = record.indexOf('\r\n') + 1
+  const buffer = new SseBuffer()
+  assert.deepEqual(buffer.push(record.slice(0, split)), [])
+  assert.deepEqual(buffer.push(record.slice(split)), ['data: {"a":1,\ndata: "b":2}'])
+  assert.equal(buffer.flush(), undefined)
+  assert.deepEqual(parseSseRecord('data: {"a":1,\ndata: "b":2}'), { a: 1, b: 2 })
+})
+
 test('parseSseRecord joins multi-line data and ignores non-data lines', () => {
   assert.deepEqual(parseSseRecord('event: content_block_delta\ndata: {"type":"content_block_delta"}'), {
     type: 'content_block_delta',
