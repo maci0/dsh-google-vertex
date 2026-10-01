@@ -299,12 +299,16 @@ export async function* streamVertex(
   }
 
   if (!response.ok) {
-    yield errorFinish(failureForStatus(
-      response.status,
-      await response.text().catch(() => ''),
-      `model "${model}" in ${config.location}`,
-      response.headers,
-    ))
+    let body: string
+    armIdle()
+    try {
+      body = await response.text().catch(() => '')
+    } finally {
+      disarmIdle()
+    }
+    yield idleTimedOut ? errorFinish(idleTimeoutFailure(config.streamIdleTimeoutMs))
+      : options.signal?.aborted === true ? transportFinish(options, options.signal.reason)
+        : errorFinish(failureForStatus(response.status, body, `model "${model}" in ${config.location}`, response.headers))
     return
   }
   if (response.body === null) {

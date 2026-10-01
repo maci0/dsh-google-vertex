@@ -12,6 +12,7 @@ import test from 'node:test'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 
 import { GoogleVertexAnthropicAdapter, type VertexAnthropicConfig } from '../src/adapter.ts'
+import { GoogleVertexGeminiAdapter } from '../src/gemini_adapter.ts'
 import { VertexAuthError, type FetchLike, type ServiceAccount } from '../src/auth.ts'
 import type { GenerateOptions } from '../src/host.ts'
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '../src/wire.ts'
@@ -216,6 +217,25 @@ test('a stalled stream is one TIMEOUT finish, not a hang', async () => {
       failure: { message: 'google-vertex: no stream data for 20ms (streamIdleTimeoutMs)', code: 'TIMEOUT' },
     },
   })
+})
+
+test('HTTP error bodies obey the idle bound and preserve caller cancellation', async () => {
+  for (const Adapter of [GoogleVertexAnthropicAdapter, GoogleVertexGeminiAdapter]) {
+    for (const [idleMs, cancelMs, kind, code] of [[20, 150, 'error', 'TIMEOUT'], [150, 20, 'aborted', 'ABORTED']] as const) {
+      const fetch: FetchLike = async (_url, init) => new Response(new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener('abort', () => controller.error(new Error('read aborted')), { once: true })
+        },
+      }), { status: 429 })
+      const adapter = new Adapter({ ...CONFIG, streamIdleTimeoutMs: idleMs }, { fetch, tokens: tokens() })
+      const chunks = await collect(adapter, { ...OPTIONS, signal: AbortSignal.timeout(cancelMs) })
+      assert.equal(chunks.length, 1)
+      const finish = chunks[0]
+      assert.ok(finish?.type === 'finish' && (finish.reason.kind === 'error' || finish.reason.kind === 'aborted'))
+      assert.equal(finish.reason.kind, kind)
+      assert.equal(finish.reason.failure.code, code)
+    }
+  }
 })
 
 test('a hung token mint is bounded by the same watchdog signal', async () => {

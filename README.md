@@ -24,7 +24,7 @@ Nothing is copied into the harness credential store: the file is read once at mo
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.1
+dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.2
 ```
 
 Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).
@@ -116,7 +116,7 @@ The agent runs a shell tool and answers from its output. The same works on the G
 Failed HTTP requests forward valid `Retry-After` seconds or HTTP dates to the harness retry policy. Invalid, non-positive, and past delays are omitted.
 
 - **Auth.** The service-account JSON is read once at mount. Per request, a JWT is signed with its private key, sent to the file's `token_uri` (or Google's public token endpoint when the file omits one), and traded for an access token (`https://www.googleapis.com/auth/cloud-platform`), which is cached and refreshed five minutes before expiry. The request carries it as a bearer token. A credential problem reports `AUTH`; a token-endpoint transport problem reports `TRANSPORT`.
-- **Streaming.** Both routes bound every read by `streamIdleTimeoutMs`. The watchdog owns its own controller, so a stalled read is torn down and the turn ends with a single `TIMEOUT` failure instead of hanging. Caller cancellation ends as an `aborted` finish, not a provider error.
+- **Streaming.** Both routes bound every read by `streamIdleTimeoutMs`, including HTTP error bodies. The watchdog owns its own controller, so a stalled read is torn down and the turn ends with a single `TIMEOUT` failure instead of hanging. Caller cancellation ends as an `aborted` finish, not a provider error.
 - **Failure classification.** A refused HTTP response and an in-band provider error envelope classify the same way: a named cause first (`RESOURCE_EXHAUSTED` → `QUOTA`, oversized prompt → `CONTEXT_WINDOW_EXCEEDED`), then the numeric code (`429` → `RATE_LIMIT`, `5xx` → `SERVER`, `404` → `NOT_FOUND`). Gemini has no terminal event, so a body that ends without a finish reason is a truncated response unless the watchdog or an in-band error already ended the turn.
 - **Replay.** Gemini 3 signs its function calls, and a replay that drops the signature is refused with `400 INVALID_ARGUMENT: Function call is missing a thought_signature in functionCall parts`. The adapter stores each emitted block's `thoughtSignature` in the harness replay envelope and echoes it on the next request. Signatures are per model, so a cross-model replay sends the call unsigned rather than failing. No `thinkingConfig` is ever sent: Gemini's dynamic-thinking default is what keeps `gemini-2.5-pro` working. Thinking tokens still arrive in `usageMetadata` and count as output.
 - **Attribution.** Requests carry `attributionHeaders()` from `@deepseek-ai/dsh-llm` rather than a pinned release line, so `User-Agent` cannot drift from the installed harness.
