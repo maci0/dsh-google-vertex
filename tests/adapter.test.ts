@@ -1,6 +1,6 @@
 /**
  * Adapter tests over a stubbed transport: the request that leaves, the chunk
- * contract the harness consumes, and every terminal class — provider refusal,
+ * contract the harness consumes, and every terminal class: provider refusal,
  * credential failure, truncation, and cancellation.
  *
  * @module dsh-google-vertex/tests/adapter
@@ -119,7 +119,7 @@ test('a refused request becomes one classified terminal finish', async () => {
     reason: {
       kind: 'error',
       failure: {
-        message: 'google-vertex: model "claude-sonnet-4-5" in global — HTTP 404: Publisher Model `claude-nope` is not servable in region global.',
+        message: 'google-vertex: model "claude-sonnet-4-5" in global: HTTP 404: Publisher Model `claude-nope` is not servable in region global.',
         code: 'NOT_FOUND',
         status: 404,
       },

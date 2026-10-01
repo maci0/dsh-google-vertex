@@ -1,5 +1,5 @@
 /**
- * dsh-google-vertex — use Google-hosted models from Vertex AI inside DeepSeek
+ * dsh-google-vertex: use Google-hosted models from Vertex AI inside DeepSeek
  * Harness, authenticated with a service-account file.
  *
  * Two capabilities, one configuration row: an `ctx.llm` provider adapter for
@@ -11,8 +11,8 @@
  *
  * A third: the `google-vertex` settings namespace. The Gemini adapter discovers
  * its catalog at runtime behind a five-minute cache, and a browser half has no
- * other way to reach this process, so the namespace's one write — the Refresh
- * control on this plugin's row page under Plugins — is what drops that cache
+ * other way to reach this process, so the namespace's one write (the Refresh
+ * control on this plugin's row page under Plugins) is what drops that cache
  * on demand.
  *
  * The credential is the service-account JSON itself: a path in configuration,
@@ -46,7 +46,7 @@ export const PROVIDER = 'google-vertex-anthropic'
 export const GEMINI_PROVIDER = 'google-vertex-gemini'
 
 /**
- * Settings namespace the browser half's card edits — the join key between the
+ * Settings namespace the browser half's card edits: the join key between the
  * two halves. The card registers into `plugins.row.config` under this namespace,
  * and the settings tab pairs the two without knowing what the namespace means.
  */
@@ -115,8 +115,8 @@ export interface Config {
   readonly streamIdleTimeoutMs: number
   /**
    * Stamp written by the Refresh control; absent until the first manual refresh.
-   * Volatile in the schema, so the settings document — which accepts only
-   * volatile fields — commits the write into this running reference and its
+   * Volatile in the schema, so the settings document (which accepts only
+   * volatile fields) commits the write into this running reference and its
    * `loader/volatile-update` drops both cached catalogs. The host never reads
    * the value; the write itself is the signal.
    */
@@ -134,8 +134,8 @@ export type Options = { [K in keyof Config]?: Config[K] extends Volatile<infer T
  * catalog materializes empty, which `resolveConfig` treats exactly like an
  * absent one and replaces with the built-in list.
  *
- * `revalidatedAt` is volatile — the only kind of field the settings document
- * accepts — and carries no default: absence means "never refreshed manually".
+ * `revalidatedAt` is volatile (the only kind of field the settings document
+ * accepts) and carries no default: absence means "never refreshed manually".
  */
 export const Config = Schema.object({
   serviceAccountFile: Schema.string(),
@@ -174,7 +174,7 @@ export function resolveConfig(config: Options = {}, env: NodeJS.ProcessEnv = pro
   const serviceAccountFile = filled.serviceAccountFile ?? env['GOOGLE_APPLICATION_CREDENTIALS']
   if (serviceAccountFile === undefined || serviceAccountFile.trim().length === 0) {
     throw new Error(
-      'google-vertex: no service account configured — set serviceAccountFile in this plugin\'s row,'
+      'google-vertex: no service account configured: set serviceAccountFile in this plugin\'s row,'
       + ' or export GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON path',
     )
   }
@@ -186,7 +186,7 @@ export function resolveConfig(config: Options = {}, env: NodeJS.ProcessEnv = pro
     ?? serviceAccount.project_id
   if (project === undefined || project.trim().length === 0) {
     throw new Error(
-      `google-vertex: no project configured — set project in this plugin's row, or export`
+      `google-vertex: no project configured: set project in this plugin's row, or export`
       + ` GOOGLE_CLOUD_PROJECT, or use a service-account file that carries "project_id"`,
     )
   }

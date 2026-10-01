@@ -1,7 +1,7 @@
 /**
  * Wire translation for Google's own Gemini models on Vertex AI: the request
- * body `publishers/google` accepts, the SSE response shape, and — the part that
- * makes tool calling work at all on Gemini 3 — the thought signature that has to
+ * body `publishers/google` accepts, the SSE response shape, and (the part that
+ * makes tool calling work at all on Gemini 3) the thought signature that has to
  * travel back with every replayed function call.
  *
  * Everything here is pure: the adapter feeds it bytes and yields the chunks it
@@ -22,8 +22,8 @@ export declare const DEFAULT_GEMINI_CONTEXT_WINDOW = 1048576;
 /**
  * Output cap applied when a caller omits one.
  *
- * Vertex's ceiling here is EXCLUSIVE — `maxOutputTokens: 65536` is refused with
- * "supported range is from 1 (inclusive) to 65536 (exclusive)" — so the highest
+ * Vertex's ceiling here is EXCLUSIVE: `maxOutputTokens: 65536` is refused with
+ * "supported range is from 1 (inclusive) to 65536 (exclusive)", so the highest
  * accepted value is one less.
  */
 export declare const DEFAULT_GEMINI_MAX_TOKENS = 65535;
@@ -119,8 +119,8 @@ export declare function geminiReplayState(model: string, blocks: readonly Gemini
 /**
  * Read back the replay metadata for one assistant message.
  *
- * Anything unexpected — a foreign envelope, another model, a block count that no
- * longer lines up with the content — yields undefined, which degrades to sending
+ * Anything unexpected (a foreign envelope, another model, a block count that no
+ * longer lines up with the content) yields undefined, which degrades to sending
  * the call without its signature rather than throwing: the provider then decides,
  * and a cross-provider history stays replayable.
  * @param message - the assistant message from history.
@@ -131,8 +131,8 @@ export declare function readGeminiReplay(message: Message, model: string): reado
 /**
  * Build the request body for one model call.
  *
- * History is projected part by part — tool results become `functionResponse`
- * parts, replayed tool calls carry their thought signature — and consecutive
+ * History is projected part by part (tool results become `functionResponse`
+ * parts, replayed tool calls carry their thought signature), and consecutive
  * same-role turns are merged, which is the one turn shape Gemini accepts.
  *
  * No `thinkingConfig` is ever sent: Gemini's own default (dynamic thinking) is

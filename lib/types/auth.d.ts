@@ -4,7 +4,7 @@
  * cache that token until shortly before it expires.
  *
  * The harness credential plane stores API keys, while a Vertex deployment
- * typically holds a service-account JSON instead — the file is the credential.
+ * typically holds a service-account JSON instead: the file is the credential.
  * That is why this module exists rather than a credential reference: nothing in
  * the harness can turn an RSA key into a bearer token on the request path.
  *

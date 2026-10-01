@@ -1,5 +1,5 @@
 /**
- * dsh-google-vertex — use Google-hosted models from Vertex AI inside DeepSeek
+ * dsh-google-vertex: use Google-hosted models from Vertex AI inside DeepSeek
  * Harness, authenticated with a service-account file.
  *
  * Two capabilities, one configuration row: an `ctx.llm` provider adapter for
@@ -11,8 +11,8 @@
  *
  * A third: the `google-vertex` settings namespace. The Gemini adapter discovers
  * its catalog at runtime behind a five-minute cache, and a browser half has no
- * other way to reach this process, so the namespace's one write — the Refresh
- * control on this plugin's row page under Plugins — is what drops that cache
+ * other way to reach this process, so the namespace's one write (the Refresh
+ * control on this plugin's row page under Plugins) is what drops that cache
  * on demand.
  *
  * The credential is the service-account JSON itself: a path in configuration,
@@ -34,7 +34,7 @@ export declare const PROVIDER = "google-vertex-anthropic";
 /** The `ctx.llm` route serving Gemini models. */
 export declare const GEMINI_PROVIDER = "google-vertex-gemini";
 /**
- * Settings namespace the browser half's card edits — the join key between the
+ * Settings namespace the browser half's card edits: the join key between the
  * two halves. The card registers into `plugins.row.config` under this namespace,
  * and the settings tab pairs the two without knowing what the namespace means.
  */
@@ -92,8 +92,8 @@ export interface Config {
     readonly streamIdleTimeoutMs: number;
     /**
      * Stamp written by the Refresh control; absent until the first manual refresh.
-     * Volatile in the schema, so the settings document — which accepts only
-     * volatile fields — commits the write into this running reference and its
+     * Volatile in the schema, so the settings document (which accepts only
+     * volatile fields) commits the write into this running reference and its
      * `loader/volatile-update` drops both cached catalogs. The host never reads
      * the value; the write itself is the signal.
      */
@@ -111,8 +111,8 @@ export type Options = {
  * catalog materializes empty, which `resolveConfig` treats exactly like an
  * absent one and replaces with the built-in list.
  *
- * `revalidatedAt` is volatile — the only kind of field the settings document
- * accepts — and carries no default: absence means "never refreshed manually".
+ * `revalidatedAt` is volatile (the only kind of field the settings document
+ * accepts) and carries no default: absence means "never refreshed manually".
  */
 export declare const Config: Schema<Schemastery.ObjectS<NoInfer<{
     serviceAccountFile: Schema<string, string, "plain">;

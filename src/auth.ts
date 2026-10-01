@@ -4,7 +4,7 @@
  * cache that token until shortly before it expires.
  *
  * The harness credential plane stores API keys, while a Vertex deployment
- * typically holds a service-account JSON instead — the file is the credential.
+ * typically holds a service-account JSON instead: the file is the credential.
  * That is why this module exists rather than a credential reference: nothing in
  * the harness can turn an RSA key into a bearer token on the request path.
  *
@@ -138,7 +138,7 @@ export function loadServiceAccount(path: string): ServiceAccount {
   } catch (error) {
     throw new Error(
       `google-vertex: cannot read service account file ${resolved}`
-      + ` — ${error instanceof Error ? error.message : String(error)}`,
+      + `: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
   return parseServiceAccount(raw, resolved)
@@ -258,7 +258,7 @@ export class ServiceAccountTokens {
       }
       throw new VertexAuthError(
         'TRANSPORT',
-        `google-vertex: token endpoint unreachable — ${error instanceof Error ? error.message : String(error)}`,
+        `google-vertex: token endpoint unreachable: ${error instanceof Error ? error.message : String(error)}`,
       )
     }
 
@@ -267,7 +267,7 @@ export class ServiceAccountTokens {
       throw new VertexAuthError(
         'AUTH',
         `google-vertex: token endpoint refused the service account (HTTP ${response.status})`
-        + `${text.length > 0 ? ` — ${text.slice(0, 300)}` : ''}`,
+        + `${text.length > 0 ? `: ${text.slice(0, 300)}` : ''}`,
       )
     }
     let payload: unknown

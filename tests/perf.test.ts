@@ -2,14 +2,14 @@
  * Deterministic performance test for the per-chunk streaming path.
  *
  * Wall clock is not asserted: it moves with frequency scaling, turbo, and noisy
- * neighbours. The gate is `process.cpuUsage()` — CPU time actually consumed by
- * this process, which descheduling and I/O wait do not inflate — measured as the
+ * neighbours. The gate is `process.cpuUsage()`: CPU time actually consumed by
+ * this process, which descheduling and I/O wait do not inflate, measured as the
  * median of several runs over a fixed, network-free chunk stream, with the first
  * run dropped. A fixed workload shape keeps the number comparable across hosts.
  *
  * The band is deliberately wide (4x the recorded baseline): it is a loaded-CI
- * gate for an algorithmic regression — a per-record regex, an O(n²) rebuild of
- * the record buffer, a re-parse of the whole stream per chunk — not a
+ * gate for an algorithmic regression (a per-record regex, an O(n²) rebuild of
+ * the record buffer, a re-parse of the whole stream per chunk), not a
  * micro-benchmark. Tighten it on dedicated hardware, never below 2x.
  *
  * @module dsh-google-vertex/tests/perf
@@ -169,7 +169,7 @@ test('the idle watchdog arms a bounded number of timers per stream', async () =>
     assert.equal(emitted, RECORDS + 4)
     // One timer covers the whole stream. Anything proportional to
     // `chunks.length` is the per-read `setTimeout`/`clearTimeout` pair this
-    // bounds — the shape that costs more the faster the provider streams.
+    // bounds: the shape that costs more the faster the provider streams.
     assert.ok(armed <= 4, `watchdog armed ${armed} timers over ${chunks.length} transport reads`)
   } finally {
     globalThis.setTimeout = realSetTimeout

@@ -2,8 +2,8 @@
  * Real-composition test: the plugin mounted into a real `@deepseek-ai/cordis`
  * `Context` over a minimal `llm` service.
  *
- * Nothing in the plugin records its own registration — the route list and its
- * withdrawal are the service's business — so the stub owns routes through the
+ * Nothing in the plugin records its own registration (the route list and its
+ * withdrawal are the service's business), so the stub owns routes through the
  * calling fiber's effect, exactly as `LlmRuntime.registerAdapter` does.
  *
  * @module dsh-google-vertex/tests/composition

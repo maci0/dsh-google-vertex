@@ -27,7 +27,7 @@ export declare const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300000;
 /** Largest delay `setTimeout` schedules without clamping it to one millisecond. */
 export declare const MAX_TIMER_DELAY_MS = 2147483647;
 /**
- * Host for a location. `global` has no region prefix — the documented global
+ * Host for a location. `global` has no region prefix: the documented global
  * endpoint is `aiplatform.googleapis.com`, and `global-aiplatform…` is not a
  * host Vertex answers on.
  * @param location - configured or defaulted region, or `global`.
@@ -130,8 +130,8 @@ interface WireUsage {
 /**
  * Map Vertex's usage counters onto harness accounting.
  *
- * Vertex splits prompt tokens the way the harness does — `input_tokens` counts
- * only uncached input, with cache reads and writes reported separately — so the
+ * Vertex splits prompt tokens the way the harness does (`input_tokens` counts
+ * only uncached input, with cache reads and writes reported separately), so the
  * fields transfer without arithmetic, and the total is their sum.
  * @param usage - the latest cumulative counters seen on the stream.
  * @returns disjoint harness counts.
@@ -141,7 +141,7 @@ export declare function mapUsage(usage: WireUsage): TokenUsage;
  * Map one provider stop reason onto the harness vocabulary.
  *
  * `pause_turn` needs no case of its own: it cannot recur here, because this
- * adapter declares no server-executed tools, so the answer is complete — which
+ * adapter declares no server-executed tools, so the answer is complete, which
  * is what the default already reports for any reason the provider adds.
  * @param reason - the `stop_reason` Vertex reported, if any.
  * @returns the harness finish reason.
@@ -224,7 +224,7 @@ interface SsePumpHooks {
  * same turn.
  *
  * The idle bound covers one outstanding read: it is armed before every read and
- * cleared as soon as that read resolves — a consumer holding a yielded event is
+ * cleared as soon as that read resolves: a consumer holding a yielded event is
  * not a stalled provider. A read that throws is left for the caller to
  * classify.
  */
@@ -237,8 +237,8 @@ export declare class SseRecordReader {
     constructor(body: AsyncIterable<Uint8Array>, hooks: SsePumpHooks);
     /**
      * Await the next transport read and frame the records it completes.
-     * @returns the records this read completed — an empty array when it completed
-     * none, including the final read that drains the decoder — or undefined once
+     * @returns the records this read completed (an empty array when it completed
+     * none, including the final read that drains the decoder), or undefined once
      * the body has ended and been drained.
      */
     read(): Promise<readonly string[] | undefined>;
@@ -254,8 +254,8 @@ export declare class SseRecordReader {
  * The translator is stateful because the two protocols disagree about
  * granularity: Vertex announces a content block and then streams deltas, while
  * the harness wants a start, the deltas, and an authoritative close. It is
- * tolerant of the events it does not project — `ping`, thinking, citations,
- * server tool use — because a provider that adds one must not break the turn.
+ * tolerant of the events it does not project (`ping`, thinking, citations,
+ * server tool use), because a provider that adds one must not break the turn.
  */
 export declare class StreamTranslator {
     #private;

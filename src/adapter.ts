@@ -9,14 +9,14 @@
  * route the harness already ships. Its credential is a service-account file,
  * turned into a bearer token per request by {@link ServiceAccountTokens} rather
  * than typed in as an API key. And its models are Claude, which Vertex serves
- * through `publishers/anthropic` — a path and body the Gemini protocol cannot
+ * through `publishers/anthropic`, a path and body the Gemini protocol cannot
  * express.
  *
  * Both routes are text-only: `inputModalities: ['text']` makes `LlmRuntime`
  * project images and files to placeholder text before dispatch, which is honest
  * about what these adapters send.
  *
- * The two routes differ in exactly three things — how a request is addressed
+ * The two routes differ in exactly three things: how a request is addressed
  * and built, what the provider's payloads mean, and what a body that ends
  * without a terminal event should be called. Each is an injected callback;
  * everything else lives here once.
@@ -145,11 +145,11 @@ function transportFinish(options: GenerateOptions, error: unknown): StreamChunk 
 /**
  * One provider translator, as the shared pump reads it.
  *
- * `handle` is the only method that can emit a terminal chunk — an Anthropic
+ * `handle` is the only method that can emit a terminal chunk: an Anthropic
  * `message_stop` and a Gemini in-band error both do. `terminal` then reports
  * that it, or the watchdog, already ended the turn, so the pump never adds a
  * second finish. A route whose terminal event is not the only way a body ends
- * — Gemini streams whole chunks and simply stops — narrows the truncation
+ * (Gemini streams whole chunks and simply stops) narrows the truncation
  * question with `sawFinish`: did the provider itself report that the turn was
  * complete? A stream that ends without one is truncated. When absent, the pump
  * falls back to `terminal`.
@@ -177,8 +177,8 @@ interface StreamPumpOptions {
  *
  * The bearer token is minted before the request, so a credentials failure is
  * reported as a terminal finish rather than as a thrown error escaping the
- * generator; `LlmRuntime` would normalize a throw the same way, but the
- * classification here (`AUTH` versus `TRANSPORT`) is the actionable part.
+ * generator; `LlmRuntime` would turn a throw into a finish too, but would code
+ * it `UNKNOWN` and lose the `AUTH` versus `TRANSPORT` classification.
  *
  * Every read is bounded by `streamIdleTimeoutMs`: a provider that stops sending
  * is a terminal `TIMEOUT` rather than a turn that never ends. The watchdog owns
@@ -326,8 +326,8 @@ export async function* streamVertex(
           const event = parseSseRecord(record)
           if (event === undefined) continue
           yield * translator.handle(event)
-          // The provider ended the turn mid-body — `message_stop`, or an
-          // in-band error envelope. Its finish has been emitted, so neither the
+          // The provider ended the turn mid-body (`message_stop`, or an
+          // in-band error envelope). Its finish has been emitted, so neither the
           // end of the body nor a close fault may add a second one.
           if (translator.terminal) return
         }

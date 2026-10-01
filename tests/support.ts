@@ -33,7 +33,7 @@ export function tokens(value = 'access-token'): { get(): Promise<string>; calls:
 
 /**
  * A body that sends the given chunks and then stalls until the request signal
- * aborts — which is how a real `fetch` body answers an aborted read.
+ * aborts, which is how a real `fetch` body answers an aborted read.
  */
 export function stallingResponse(signal: AbortSignal | null | undefined, before: readonly string[] = []): Response {
   const encoder = new TextEncoder()

@@ -126,8 +126,8 @@ test('the Gemini body drops additionalProperties, which the Vertex Schema messag
 test('the Gemini body maps oneOf to the nullable/anyOf shape the Schema message carries', () => {
   // `str_replace_editor` (packages/fs/tool-str-replace-editor/src/index.ts) is a
   // shipped tool whose parameters use `oneOf` for nullable fields. Vertex's
-  // `Schema` message has no `oneOf` member — it has `anyOf` and `nullable`, and
-  // no null type — so a nullable union becomes `nullable: true` plus its other
+  // `Schema` message has no `oneOf` member (it has `anyOf` and `nullable`, and
+  // no null type), so a nullable union becomes `nullable: true` plus its other
   // branch, and a union of real alternatives becomes `anyOf`. That is the same
   // rewrite the official `@google/genai` converter applies to `anyOf`.
   const body = buildGeminiRequest({
