@@ -50,7 +50,7 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 export const MAX_TIMER_DELAY_MS = 2_147_483_647
 
 /**
- * Host for a location. `global` has no region prefix — the documented global
+ * Host for a location. `global` has no region prefix: the documented global
  * endpoint is `aiplatform.googleapis.com`, and `global-aiplatform…` is not a
  * host Vertex answers on.
  * @param location - configured or defaulted region, or `global`.
@@ -144,7 +144,7 @@ export interface VertexWireConfig {
 
 /**
  * One cache breakpoint is only useful where Vertex can store a prefix, which is
- * every block type this adapter emits — the request never carries the provider's
+ * every block type this adapter emits: the request never carries the provider's
  * own non-cacheable blocks.
  */
 const CACHE_CONTROL: CacheControl = { type: 'ephemeral' }
@@ -284,8 +284,8 @@ interface WireUsage {
 /**
  * Map Vertex's usage counters onto harness accounting.
  *
- * Vertex splits prompt tokens the way the harness does — `input_tokens` counts
- * only uncached input, with cache reads and writes reported separately — so the
+ * Vertex splits prompt tokens the way the harness does (`input_tokens` counts
+ * only uncached input, with cache reads and writes reported separately), so the
  * fields transfer without arithmetic, and the total is their sum.
  * @param usage - the latest cumulative counters seen on the stream.
  * @returns disjoint harness counts.
@@ -308,7 +308,7 @@ export function mapUsage(usage: WireUsage): TokenUsage {
  * Map one provider stop reason onto the harness vocabulary.
  *
  * `pause_turn` needs no case of its own: it cannot recur here, because this
- * adapter declares no server-executed tools, so the answer is complete — which
+ * adapter declares no server-executed tools, so the answer is complete, which
  * is what the default already reports for any reason the provider adds.
  * @param reason - the `stop_reason` Vertex reported, if any.
  * @returns the harness finish reason.
@@ -375,7 +375,7 @@ function failureDetail(body: string): { message: string; status: string } {
  */
 export function failureForStatus(status: number, body: string, subject: string): LlmFailure {
   const detail = failureDetail(body)
-  const message = `google-vertex: ${subject} — HTTP ${status}${detail.message.length > 0 ? `: ${detail.message}` : ''}`
+  const message = `google-vertex: ${subject}: HTTP ${status}${detail.message.length > 0 ? `: ${detail.message}` : ''}`
   return { message, code: codeForDetail(`${detail.status} ${detail.message}`) ?? codeForStatus(status), status }
 }
 
@@ -514,7 +514,7 @@ export class SseBuffer {
   push(text: string): string[] {
     // A CR at the end of a chunk cannot be classified yet: it is either the
     // first half of a CRLF whose LF opens the next chunk, or a lone CR. Holding
-    // it back is what keeps a split CRLF one line ending — normalizing the
+    // it back is what keeps a split CRLF one line ending: normalizing the
     // chunk on its own would turn the pair into two, framing a phantom record
     // and cutting a multi-line payload in half.
     let chunk = text
@@ -569,7 +569,7 @@ interface SsePumpHooks {
  * same turn.
  *
  * The idle bound covers one outstanding read: it is armed before every read and
- * cleared as soon as that read resolves — a consumer holding a yielded event is
+ * cleared as soon as that read resolves: a consumer holding a yielded event is
  * not a stalled provider. A read that throws is left for the caller to
  * classify.
  */
@@ -591,8 +591,8 @@ export class SseRecordReader {
 
   /**
    * Await the next transport read and frame the records it completes.
-   * @returns the records this read completed — an empty array when it completed
-   * none, including the final read that drains the decoder — or undefined once
+   * @returns the records this read completed (an empty array when it completed
+   * none, including the final read that drains the decoder), or undefined once
    * the body has ended and been drained.
    */
   async read(): Promise<readonly string[] | undefined> {
@@ -646,8 +646,8 @@ function eventIndex(event: Record<string, unknown>): number | undefined {
  * The translator is stateful because the two protocols disagree about
  * granularity: Vertex announces a content block and then streams deltas, while
  * the harness wants a start, the deltas, and an authoritative close. It is
- * tolerant of the events it does not project — `ping`, thinking, citations,
- * server tool use — because a provider that adds one must not break the turn.
+ * tolerant of the events it does not project (`ping`, thinking, citations,
+ * server tool use), because a provider that adds one must not break the turn.
  */
 export class StreamTranslator {
   readonly #blocks = new Map<number, PartialBlock>()

@@ -4,8 +4,8 @@
 # `- id: google-vertex` row, which replaces the row's whole `config`.
 #
 # One row registers two routes:
-#   google-vertex-anthropic — Google-hosted Claude (publishers/anthropic)
-#   google-vertex-gemini    — Gemini (publishers/google)
+#   google-vertex-anthropic: Google-hosted Claude (publishers/anthropic)
+#   google-vertex-gemini:    Gemini (publishers/google)
 - insert:
     - id: google-vertex
       name: 'dsh-google-vertex'

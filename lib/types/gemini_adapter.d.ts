@@ -1,8 +1,8 @@
 /**
  * Provider adapter for Google's own Gemini models on Vertex AI.
  *
- * Same credential as the Claude route beside it — one service-account file, one
- * bearer token per request — over the `publishers/google` endpoint instead of
+ * Same credential as the Claude route beside it (one service-account file, one
+ * bearer token per request) over the `publishers/google` endpoint instead of
  * `publishers/anthropic`. Both live in one plugin row so project, region, and
  * credentials are configured once.
  *
@@ -46,7 +46,7 @@ export declare class GoogleVertexGeminiAdapter extends VertexPublisherAdapter<Ge
      * Gemini has no terminal event: the body simply ends, and the finish reason
      * rides the last content chunk. A body that ends without one is therefore a
      * truncated response, which is what {@link GeminiStreamTranslator.sawFinish}
-     * distinguishes — unless an in-band error or the idle watchdog already ended
+     * distinguishes, unless an in-band error or the idle watchdog already ended
      * the turn. The shared pump owns the watchdog, the token mint, and the SSE
      * loop; this route's finish is built at the end of the body.
      */
