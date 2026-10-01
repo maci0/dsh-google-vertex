@@ -290,8 +290,8 @@ test('a refused HTTP response classifies RESOURCE_EXHAUSTED the way the in-band 
   const chunks = await collect(adapter, OPTIONS)
 
   assert.equal(chunks.length, 1)
-  const finish = chunks[0] as { reason: { kind: string; failure: { code: string; status: number; message: string } } }
-  assert.equal(finish.reason.kind, 'error')
+  const finish = chunks[0]
+  assert.ok(finish?.type === 'finish' && finish.reason.kind === 'error')
   assert.equal(finish.reason.failure.code, 'QUOTA')
   assert.equal(finish.reason.failure.status, 429)
   assert.equal(finish.reason.failure.providerRetryAfterMs, 12_000)
