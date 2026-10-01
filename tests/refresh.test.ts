@@ -14,8 +14,7 @@
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 
@@ -23,6 +22,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { Plugin } from '@deepseek-ai/cordis'
 
 import * as plugin from '../src/index.ts'
+import { removeScratch, scratchDir } from './support.ts'
 import type { LlmAdapterLike } from '../src/host.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -55,8 +55,9 @@ class StubLlm extends Service {
 /** An adapter with the refresh verb the plugin's settings hook calls. */
 type RefreshableAdapter = LlmAdapterLike & { invalidateModels(): void }
 
-test('a committed settings write drops the cached catalog, so the next read re-discovers', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-google-vertex-refresh-'))
+test('a committed settings write drops the cached catalog, so the next read re-discovers', async (t) => {
+  const dir = scratchDir('refresh-')
+  t.after(() => removeScratch(dir))
   const accountPath = join(dir, 'service-account.json')
   // A real key: the token source signs the assertion before it ever reaches the
   // stubbed transport, and a placeholder key would fail there instead.
@@ -122,8 +123,9 @@ test('a committed settings write drops the cached catalog, so the next read re-d
   }
 })
 
-test('a configured Gemini catalog is served as configured, without discovery', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-google-vertex-pinned-'))
+test('a configured Gemini catalog is served as configured, without discovery', async (t) => {
+  const dir = scratchDir('pinned-')
+  t.after(() => removeScratch(dir))
   const accountPath = join(dir, 'service-account.json')
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,

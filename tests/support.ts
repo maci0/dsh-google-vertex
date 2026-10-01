@@ -1,10 +1,15 @@
 /**
  * Shared adapter-test fixtures: a stubbed streaming response, a counting token
- * source, a body that stalls until its request is aborted, and the collector
- * both adapter suites feed their streams through.
+ * source, a body that stalls until its request is aborted, the collector
+ * both adapter suites feed their streams through, and a repo-local scratch
+ * directory for files a test writes.
  *
  * @module dsh-google-vertex/tests/support
  */
+
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { GenerateOptions, StreamChunk } from '../src/host.ts'
 
@@ -53,4 +58,23 @@ export async function collect(
   const chunks: StreamChunk[] = []
   for await (const chunk of adapter.stream(options)) chunks.push(chunk)
   return chunks
+}
+
+/** Gitignored repo-local root for files a test writes; never the system temp dir. */
+const SCRATCH_ROOT = fileURLToPath(new URL('../.scratch/', import.meta.url))
+
+/**
+ * A fresh directory under the repo's `.scratch/`. The caller removes it with
+ * {@link removeScratch} once the test that wrote into it ends.
+ * @param prefix - directory name prefix.
+ * @returns the absolute path of the new directory.
+ */
+export function scratchDir(prefix: string): string {
+  mkdirSync(SCRATCH_ROOT, { recursive: true })
+  return mkdtempSync(join(SCRATCH_ROOT, prefix))
+}
+
+/** Remove a {@link scratchDir} directory and every file in it. */
+export function removeScratch(dir: string): void {
+  rmSync(dir, { recursive: true, force: true })
 }
