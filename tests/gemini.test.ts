@@ -173,7 +173,7 @@ test('a tool round trip carries the function name and Vertex thought signature',
     messages: [
       { id: '1', role: 'user', content: [{ type: 'text', text: 'weather in Paris?' }] },
       assistant,
-      { id: '3', role: 'user', content: [{ type: 'tool-result', toolCallId: 'call_74136', content: [{ type: 'text', text: '18C and clear' }] }] },
+      { id: '3', role: 'tool', toolCallId: 'call_74136', content: [{ type: 'text', text: '18C and clear' }] },
     ],
   }, CONFIG)
 

@@ -101,7 +101,7 @@ export interface VertexWireConfig {
     maxTokens: number;
 }
 /**
- * Flatten nested tool-result content to the text Vertex accepts.
+ * Flatten a tool-role message's content to the text Vertex accepts.
  *
  * The Gemini route sends a tool result the same way, so this is exported rather
  * than written twice.
