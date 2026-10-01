@@ -68,12 +68,12 @@ interface Snapshot {
 type Component = (props: { view: 'summary' | 'page' }) => Element | string | null
 
 /** Load the bundle the way the client module system does and return its exports. */
-function loadBundle(snapshot: Snapshot, writes: unknown[][]) {
+function loadBundle(snapshot: Snapshot, writes: unknown[][], accepted = true) {
   const react = createReactStub()
   const scope = {
     subscribe: (): (() => void) => () => {},
     getSnapshot: (): Snapshot => snapshot,
-    set: async (field: string, value: unknown): Promise<void> => { writes.push([field, value]) },
+    set: async (field: string, value: unknown): Promise<boolean> => { writes.push([field, value]); return accepted },
   }
 
   // One dictionary per namespace, registered `en` first, with the service's own
@@ -252,4 +252,12 @@ test('an unavailable namespace renders no trace of the card in either view', () 
   const component = cardOf(registered)
   assert.equal(raw(react, component, 'summary'), null)
   assert.equal(raw(react, component, 'page'), null)
+})
+
+test('a refused refresh is visible instead of silently doing nothing', async () => {
+  const { registered, react } = loadBundle(ready({ revalidatedAt: '' }), [], false)
+  const component = cardOf(registered)
+  ;(render(react, component, 'page').find(element => element.type === 'button')?.props['onClick'] as () => void)()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(text(render(react, component, 'page')).some(line => typeof line === 'string' && /refused/i.test(line)))
 })
