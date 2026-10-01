@@ -7,15 +7,15 @@
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import test from 'node:test'
+import test, { after } from 'node:test'
 
 import { apply, Config, DEFAULT_MODELS, GEMINI_PROVIDER, PROVIDER, resolveConfig } from '../src/index.ts'
 import { DEFAULT_GEMINI_CONTEXT_WINDOW } from '../src/gemini.ts'
 import type { HostContext } from '../src/host.ts'
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, MAX_TIMER_DELAY_MS } from '../src/wire.ts'
+import { removeScratch, scratchDir } from './support.ts'
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -23,7 +23,8 @@ const { privateKey } = generateKeyPairSync('rsa', {
   publicKeyEncoding: { type: 'spki', format: 'pem' },
 })
 
-const dir = mkdtempSync(join(tmpdir(), 'dsh-google-vertex-'))
+const dir = scratchDir('config-')
+after(() => removeScratch(dir))
 const accountPath = join(dir, 'service-account.json')
 writeFileSync(accountPath, JSON.stringify({
   type: 'service_account',

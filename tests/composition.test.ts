@@ -10,8 +10,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 
@@ -19,6 +18,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { Plugin } from '@deepseek-ai/cordis'
 
 import * as plugin from '../src/index.ts'
+import { removeScratch, scratchDir } from './support.ts'
 import type { LlmAdapterLike } from '../src/host.ts'
 
 /**
@@ -50,8 +50,9 @@ class StubLlm extends Service {
   }
 }
 
-test('mounting the plugin on a real Context registers both routes and withdraws on disposal', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-google-vertex-composition-'))
+test('mounting the plugin on a real Context registers both routes and withdraws on disposal', async (t) => {
+  const dir = scratchDir('composition-')
+  t.after(() => removeScratch(dir))
   const accountPath = join(dir, 'service-account.json')
   writeFileSync(accountPath, JSON.stringify({
     type: 'service_account',
