@@ -303,6 +303,7 @@ export async function* streamVertex(
       response.status,
       await response.text().catch(() => ''),
       `model "${model}" in ${config.location}`,
+      response.headers,
     ))
     return
   }

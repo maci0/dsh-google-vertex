@@ -295,3 +295,32 @@ test('model metadata is the configured catalog plus the resolved capacities', as
   assert.equal(adapter.providerRetryPolicy('google-vertex-anthropic'), undefined)
   assert.equal(adapter.imageRequestPricing('google-vertex-anthropic', 'claude-future'), undefined)
 })
+
+
+test('failed requests preserve valid Retry-After delays and omit invalid ones', async () => {
+  const future = new Date(Date.now() + 60_000).toUTCString()
+  const cases: [string | undefined, number | undefined][] = [
+    ['12', 12_000], ['0.5', 500], [' 2 ', 2_000], [future, -1],
+    [undefined, undefined], ['', undefined], ['0', undefined], ['-9999', undefined],
+    ['1e3', undefined], ['Infinity', undefined], ['nonsense', undefined],
+    ['Wed, 01 Jan 2020 00:00:00 GMT', undefined], ['9'.repeat(400), undefined],
+  ]
+  for (const [header, expected] of cases) {
+    const headers = new Headers()
+    if (header !== undefined) headers.set('Retry-After', header)
+    const fetch: FetchLike = async () => new Response('{"error":{"message":"slow down"}}', { status: 429, headers })
+    const adapter = new GoogleVertexAnthropicAdapter(CONFIG, { fetch, tokens: tokens() })
+    const chunks = await collect(adapter, OPTIONS)
+    const finish = chunks[0]
+    assert.ok(finish?.type === 'finish' && finish.reason.kind === 'error')
+    const failure = finish.reason.failure
+    assert.equal(failure.code, 'RATE_LIMIT')
+    assert.equal(failure.status, 429)
+    if (expected === -1) {
+      assert.ok(failure.providerRetryAfterMs! > 55_000 && failure.providerRetryAfterMs! <= 60_000)
+    } else {
+      assert.equal(failure.providerRetryAfterMs, expected, String(header))
+      if (expected === undefined) assert.equal('providerRetryAfterMs' in failure, false)
+    }
+  }
+})

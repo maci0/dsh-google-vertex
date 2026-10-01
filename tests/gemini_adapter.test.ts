@@ -285,7 +285,7 @@ test('model metadata comes from the catalog and reports the family capacities', 
 test('a refused HTTP response classifies RESOURCE_EXHAUSTED the way the in-band envelope does', async () => {
   // Vertex's 429 body names the quota condition in `status`, not in `message`.
   const body = '{"error":{"code":429,"message":"Resource exhausted. Please try again later.","status":"RESOURCE_EXHAUSTED"}}'
-  const fetch: FetchLike = () => Promise.resolve(new Response(body, { status: 429, headers: { 'content-type': 'application/json' } }))
+  const fetch: FetchLike = () => Promise.resolve(new Response(body, { status: 429, headers: { 'content-type': 'application/json', 'Retry-After': '12' } }))
   const adapter = new GoogleVertexGeminiAdapter(CONFIG, { fetch, tokens: tokens() })
   const chunks = await collect(adapter, OPTIONS)
 
@@ -294,5 +294,6 @@ test('a refused HTTP response classifies RESOURCE_EXHAUSTED the way the in-band 
   assert.equal(finish.reason.kind, 'error')
   assert.equal(finish.reason.failure.code, 'QUOTA')
   assert.equal(finish.reason.failure.status, 429)
+  assert.equal(finish.reason.failure.providerRetryAfterMs, 12_000)
   assert.match(finish.reason.failure.message, /Resource exhausted\. Please try again later\./)
 })

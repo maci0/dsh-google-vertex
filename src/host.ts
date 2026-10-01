@@ -85,6 +85,8 @@ export interface LlmFailure {
   readonly message: string
   readonly code: string
   readonly status?: number
+  /** Positive provider-requested retry delay in milliseconds. */
+  readonly providerRetryAfterMs?: number
 }
 
 /** Why a model response stopped. */

@@ -24,7 +24,7 @@ Nothing is copied into the harness credential store: the file is read once at mo
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.0
+dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.1
 ```
 
 Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).
@@ -112,6 +112,8 @@ List the files in this directory and tell me which one is largest.
 The agent runs a shell tool and answers from its output. The same works on the Gemini group, including the signed replay of the model's function call.
 
 ## How it works
+
+Failed HTTP requests forward valid `Retry-After` seconds or HTTP dates to the harness retry policy. Invalid, non-positive, and past delays are omitted.
 
 - **Auth.** The service-account JSON is read once at mount. Per request, a JWT is signed with its private key, sent to the file's `token_uri` (or Google's public token endpoint when the file omits one), and traded for an access token (`https://www.googleapis.com/auth/cloud-platform`), which is cached and refreshed five minutes before expiry. The request carries it as a bearer token. A credential problem reports `AUTH`; a token-endpoint transport problem reports `TRANSPORT`.
 - **Streaming.** Both routes bound every read by `streamIdleTimeoutMs`. The watchdog owns its own controller, so a stalled read is torn down and the turn ends with a single `TIMEOUT` failure instead of hanging. Caller cancellation ends as an `aborted` finish, not a provider error.

@@ -158,9 +158,10 @@ export declare function mapStopReason(reason: string | undefined): FinishReason;
  * @param status - HTTP status.
  * @param body - response body text.
  * @param subject - route description named in the failure.
+ * @param headers - HTTP response headers carrying an optional Retry-After.
  * @returns the failure to report.
  */
-export declare function failureForStatus(status: number, body: string, subject: string): LlmFailure;
+export declare function failureForStatus(status: number, body: string, subject: string, headers?: Headers): LlmFailure;
 /**
  * Classify a stream-level `error` payload.
  *
