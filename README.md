@@ -93,7 +93,7 @@ Ids are Vertex's aliases, so a promoted release needs no edit here. Both catalog
 
 ### Discovery and refresh
 
-The lists above are the fallback, not the whole catalog. Gemini models are read from Vertex's `publishers/google/models` catalog API, and that result is cached for five minutes so opening the model picker is not a network call. The Claude list is served exactly as configured, because Vertex exposes no Anthropic model listing endpoint.
+The lists above are the fallback, not the whole catalog. Gemini models are read from Vertex's `publishers/google/models` list (a `v1beta1` method: v1 has no list), keeping `gemini-` ids except the embedding, TTS, image, Live, and audio variants this text route cannot drive. A built-in id keeps its picker label; any other is labelled by its id. The result is cached for five minutes so opening the model picker is not a network call. The Claude list is served exactly as configured, because Vertex exposes no Anthropic model listing endpoint.
 
 The picker re-reads that catalog when the host says a model input changed, so a model Google published a minute ago stays invisible until then. This plugin's row page carries the control that forces it: open **Plugins** in the sidebar, open the `dsh-google-vertex` bundle, and configure the `google-vertex` row. **Refresh models** drops the cached Gemini catalog and makes the picker re-read it from this process. The card records the last manual refresh in its own `google-vertex` settings namespace, and the write is also the signal — a browser half has no other channel to the host.
 

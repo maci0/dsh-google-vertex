@@ -116,23 +116,41 @@ test('ModelCache respects TTL expiry', async () => {
 // fetchGeminiModels
 // ---------------------------------------------------------------------------
 
-test('fetchGeminiModels parses a single-page response', async () => {
-  const fetch: FetchLike = (_url, _init) => Promise.resolve(new Response(
-    JSON.stringify({
-      models: [
-        { name: 'publishers/google/models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
-        { name: 'publishers/google/models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
+// Shapes follow Vertex's v1beta1 discovery document: `publishers.models.list`
+// (v1 has no list method) answers `ListPublisherModelsResponse` with
+// `publisherModels` and `nextPageToken`; a `PublisherModel` has no display name,
+// and its `supportedActions` is a `CallToAction` object, not a list of verbs.
+
+/** A JSON response from the stubbed catalog. */
+function catalog(body: unknown): Promise<Response> {
+  return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }))
+}
+
+test('fetchGeminiModels reads the v1beta1 catalog and keeps the Gemini text models', async () => {
+  let calledUrl = ''
+  const fetch: FetchLike = (url, _init) => {
+    calledUrl = url
+    return catalog({
+      publisherModels: [
+        { name: 'publishers/google/models/gemini-2.5-pro', supportedActions: { openGenerationAiStudio: {} }, launchStage: 'GA' },
+        { name: 'publishers/google/models/gemini-9-flash' },
+        { name: 'publishers/google/models/gemini-embedding-001' },
+        { name: 'publishers/google/models/gemini-2.5-flash-preview-tts' },
+        { name: 'publishers/google/models/gemini-2.5-flash-image' },
+        { name: 'publishers/google/models/gemini-live-2.5-flash' },
+        { name: 'publishers/google/models/text-embedding-005' },
+        { name: 'publishers/google/models/imagen-4.0-generate-001' },
       ],
-    }),
-    { status: 200, headers: { 'content-type': 'application/json' } },
-  ))
+    })
+  }
   const tokenSource = { get: async () => 'token' }
 
   const models = await fetchGeminiModels('global', tokenSource, fetch)
-  assert.equal(models.length, 2)
-  assert.equal(models[0]?.id, 'gemini-2.5-pro')
-  assert.equal(models[0]?.name, 'Gemini 2.5 Pro (Vertex)')
-  assert.equal(models[1]?.id, 'gemini-2.5-flash')
+  assert.equal(calledUrl, 'https://aiplatform.googleapis.com/v1beta1/publishers/google/models')
+  assert.deepEqual(models, [
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Vertex)' },
+    { id: 'gemini-9-flash', name: 'gemini-9-flash (Vertex)' },
+  ])
 })
 
 test('fetchGeminiModels follows pagination', async () => {
@@ -141,49 +159,15 @@ test('fetchGeminiModels follows pagination', async () => {
     page += 1
     if (page === 1) {
       assert.ok(!url.includes('pageToken'))
-      return Promise.resolve(new Response(
-        JSON.stringify({
-          models: [{ name: 'publishers/google/models/gemini-a' }],
-          nextPageToken: 'tok2',
-        }),
-        { status: 200 },
-      ))
+      return catalog({ publisherModels: [{ name: 'publishers/google/models/gemini-a' }], nextPageToken: 'tok2' })
     }
-    assert.ok(url.includes('pageToken=tok2'))
-    return Promise.resolve(new Response(
-      JSON.stringify({ models: [{ name: 'publishers/google/models/gemini-b' }] }),
-      { status: 200 },
-    ))
+    assert.ok(url.endsWith('?pageToken=tok2'))
+    return catalog({ publisherModels: [{ name: 'publishers/google/models/gemini-b' }] })
   }
   const tokenSource = { get: async () => 'token' }
 
   const models = await fetchGeminiModels('us-central1', tokenSource, fetch)
-  assert.equal(models.length, 2)
-  assert.equal(models[0]?.id, 'gemini-a')
-  assert.equal(models[1]?.id, 'gemini-b')
-})
-
-test('fetchGeminiModels skips models without generateContent support', async () => {
-  const fetch: FetchLike = (_url, _init) => Promise.resolve(new Response(
-    JSON.stringify({
-      models: [
-        {
-          name: 'publishers/google/models/gemini-pro',
-          supportedActions: ['generateContent', 'streamGenerateContent'],
-        },
-        {
-          name: 'publishers/google/models/text-embedding-004',
-          supportedActions: ['embedContent'],
-        },
-      ],
-    }),
-    { status: 200 },
-  ))
-  const tokenSource = { get: async () => 'token' }
-
-  const models = await fetchGeminiModels('global', tokenSource, fetch)
-  assert.equal(models.length, 1)
-  assert.equal(models[0]?.id, 'gemini-pro')
+  assert.deepEqual(models.map(model => model.id), ['gemini-a', 'gemini-b'])
 })
 
 test('fetchGeminiModels throws on HTTP error', async () => {
@@ -196,27 +180,14 @@ test('fetchGeminiModels throws on HTTP error', async () => {
   )
 })
 
-test('fetchGeminiModels uses correct endpoint for regional location', async () => {
+test('fetchGeminiModels uses the regional endpoint for a region', async () => {
   let calledUrl = ''
   const fetch: FetchLike = (url, _init) => {
     calledUrl = url
-    return Promise.resolve(new Response(JSON.stringify({ models: [] }), { status: 200 }))
+    return catalog({})
   }
   const tokenSource = { get: async () => 'token' }
 
-  await fetchGeminiModels('us-east4', tokenSource, fetch)
-  assert.ok(calledUrl.startsWith('https://us-east4-aiplatform.googleapis.com/'))
-  assert.ok(calledUrl.includes('/publishers/google/models'))
-})
-
-test('fetchGeminiModels uses global endpoint when location is global', async () => {
-  let calledUrl = ''
-  const fetch: FetchLike = (url, _init) => {
-    calledUrl = url
-    return Promise.resolve(new Response(JSON.stringify({ models: [] }), { status: 200 }))
-  }
-  const tokenSource = { get: async () => 'token' }
-
-  await fetchGeminiModels('global', tokenSource, fetch)
-  assert.ok(calledUrl.startsWith('https://aiplatform.googleapis.com/'))
+  assert.deepEqual(await fetchGeminiModels('us-east4', tokenSource, fetch), [])
+  assert.equal(calledUrl, 'https://us-east4-aiplatform.googleapis.com/v1beta1/publishers/google/models')
 })
