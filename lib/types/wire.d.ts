@@ -152,7 +152,9 @@ export declare function mapStopReason(reason: string | undefined): FinishReason;
  *
  * Two refusals carry a code of their own because the harness treats them
  * differently: an oversized request must not be retried, and an exhausted quota
- * is a capacity problem rather than an invalid one.
+ * is a capacity problem rather than an invalid one. Google names the quota in
+ * the envelope's `status` (`RESOURCE_EXHAUSTED`), so that is read as well as
+ * the message, exactly as {@link failureForEvent} reads an in-band envelope.
  * @param status - HTTP status.
  * @param body - response body text.
  * @param subject - route description named in the failure.
