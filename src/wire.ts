@@ -150,7 +150,7 @@ export interface VertexWireConfig {
 const CACHE_CONTROL: CacheControl = { type: 'ephemeral' }
 
 /**
- * Flatten nested tool-result content to the text Vertex accepts.
+ * Flatten a tool-role message's content to the text Vertex accepts.
  *
  * The Gemini route sends a tool result the same way, so this is exported rather
  * than written twice.
@@ -160,7 +160,6 @@ export function resultText(blocks: readonly ContentBlock[]): string {
   for (const block of blocks) {
     if (block.type === 'text' && typeof block.text === 'string') parts.push(block.text)
     else if (block.type === 'tool-call') parts.push(`[tool call] ${String(block.name)}(${String(block.arguments)})`)
-    else if (block.type === 'tool-result') parts.push(resultText((block.content ?? []) as readonly ContentBlock[]))
   }
   const joined = parts.join('')
   // An empty tool result is still a result: the provider rejects empty content.
@@ -192,14 +191,6 @@ function messageContent(message: GenerateOptions['messages'][number]): WireConte
           id: String(block.id),
           name: String(block.name),
           input: toolInput(String(block.arguments)),
-        })
-        break
-      case 'tool-result':
-        content.push({
-          type: 'tool_result',
-          tool_use_id: String(block.toolCallId),
-          content: resultText((block.content ?? []) as readonly ContentBlock[]),
-          ...block.isError === true ? { is_error: true } : {},
         })
         break
       default:

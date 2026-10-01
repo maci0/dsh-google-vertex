@@ -56,7 +56,7 @@ test('buildRequestBody hoists system text, merges roles, and maps tool blocks', 
       { id: '1', role: 'user', content: [{ type: 'text', text: 'hi' }] },
       { id: '2', role: 'assistant', content: [{ type: 'reasoning', text: 'thinking' }, { type: 'text', text: 'sure' }] },
       { id: '3', role: 'assistant', content: [{ type: 'tool-call', id: 'tu_1', name: 'read', arguments: '{"path":"a.txt"}' }] },
-      { id: '4', role: 'user', content: [{ type: 'tool-result', toolCallId: 'tu_1', content: [{ type: 'text', text: 'contents' }] }] },
+      { id: '4', role: 'tool', toolCallId: 'tu_1', content: [{ type: 'text', text: 'contents' }] },
       { id: '5', role: 'user', content: [{ type: 'text', text: 'and now?' }] },
     ],
   }
@@ -106,7 +106,7 @@ test('cache breakpoints land on tools, system, and the final block', () => {
 test('an empty tool result is still a result the provider accepts', () => {
   const body = buildRequestBody({
     model: 'm',
-    messages: [{ id: '1', role: 'user', content: [{ type: 'tool-result', toolCallId: 'tu', content: [] }] }],
+    messages: [{ id: '1', role: 'tool', toolCallId: 'tu', content: [] }],
   }, CONFIG)
   assert.equal((body.messages[0]?.content[0] as Record<string, unknown> | undefined)?.['content'], '(no output)')
 })

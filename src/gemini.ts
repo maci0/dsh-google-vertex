@@ -310,24 +310,10 @@ function assistantParts(message: Message, model: string): GeminiPart[] {
 }
 
 /** Project one user message onto Gemini parts. */
-function userParts(message: Message, names: Map<string, string>): GeminiPart[] {
+function userParts(message: Message): GeminiPart[] {
   const parts: GeminiPart[] = []
   for (const block of message.content) {
-    if (block.type === 'text') {
-      if (typeof block.text === 'string' && block.text.length > 0) parts.push({ text: block.text })
-      continue
-    }
-    if (block.type === 'tool-result') {
-      const callId = String(block.toolCallId)
-      parts.push({
-        functionResponse: {
-          // Vertex matches a response to its call by name, and by id when given.
-          name: names.get(callId) ?? callId,
-          ...callId.length > 0 ? { id: callId } : {},
-          response: { result: resultText((block.content ?? []) as readonly ContentBlock[]) },
-        },
-      })
-    }
+    if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) parts.push({ text: block.text })
   }
   return parts
 }
@@ -341,7 +327,7 @@ function userParts(message: Message, names: Map<string, string>): GeminiPart[] {
  */
 function toolResultParts(message: Message, names: Map<string, string>): GeminiPart[] {
   const callId = message.toolCallId
-  if (callId === undefined || callId.length === 0) return userParts(message, names)
+  if (callId === undefined || callId.length === 0) return userParts(message)
   return [{
     functionResponse: {
       name: names.get(callId) ?? callId,
@@ -375,7 +361,7 @@ export function buildGeminiRequest(options: GenerateOptions, config: VertexWireC
       ? toolResultParts(message, names)
       : role === 'model'
         ? assistantParts(message, model)
-        : userParts(message, names)
+        : userParts(message)
     if (parts.length === 0) continue
     const previous = contents.at(-1)
     if (previous !== undefined && previous.role === role) previous.parts.push(...parts)

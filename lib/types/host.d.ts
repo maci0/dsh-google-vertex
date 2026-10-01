@@ -30,11 +30,6 @@ export type ContentBlock = {
     readonly name: string;
     readonly arguments: string;
 } | {
-    readonly type: 'tool-result';
-    readonly toolCallId: string;
-    readonly content: readonly ContentBlock[];
-    readonly isError?: boolean;
-} | {
     readonly type: string;
     readonly [key: string]: unknown;
 };

@@ -98,7 +98,7 @@ test('a replayed tool call sends the thought signature Vertex demands', async ()
     messages: [
       { id: '1', role: 'user', content: [{ type: 'text', text: 'weather?' }] },
       assistant,
-      { id: '3', role: 'user', content: [{ type: 'tool-result', toolCallId: 'call_1', content: [{ type: 'text', text: '18C and clear' }] }] },
+      { id: '3', role: 'tool', toolCallId: 'call_1', content: [{ type: 'text', text: '18C and clear' }] },
     ],
   })
 
