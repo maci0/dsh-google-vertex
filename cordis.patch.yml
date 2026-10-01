@@ -25,7 +25,7 @@
         # Claude model ids, replacing the built-in catalog.
         # models:
         #   - claude-sonnet-4-5
-        # Gemini model ids, replacing the built-in catalog.
+        # Gemini model ids, replacing the built-in catalog and live discovery.
         # geminiModels:
         #   - gemini-3.5-flash
         #   - gemini-2.5-pro

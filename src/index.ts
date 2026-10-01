@@ -250,14 +250,19 @@ export function apply(ctx: HostContext, config: Config): void {
   const { anthropic, gemini } = resolved
 
   // Only the Gemini route discovers: Vertex has no Anthropic listing endpoint,
-  // so the Claude catalog is the configured (or built-in) list itself.
+  // so the Claude catalog is the configured (or built-in) list itself. A
+  // configured `geminiModels` is likewise served as written, never replaced by
+  // the discovered catalog.
   const fetchFn: (input: string, init: RequestInit) => Promise<Response>
     = (input, init) => globalThis.fetch(input, init)
   const tokenSource = new ServiceAccountTokens(anthropic.serviceAccount, { fetch: fetchFn })
-  const discoverGemini = () => fetchGeminiModels(gemini.location, tokenSource, fetchFn)
+  const pinnedGemini = row.geminiModels !== undefined && row.geminiModels.length > 0
+  const discoverGemini = pinnedGemini
+    ? undefined
+    : () => fetchGeminiModels(gemini.location, tokenSource, fetchFn)
 
   const anthropicAdapter = new GoogleVertexAnthropicAdapter(anthropic)
-  const geminiAdapter = new GoogleVertexGeminiAdapter(gemini, { discover: discoverGemini })
+  const geminiAdapter = new GoogleVertexGeminiAdapter(gemini, discoverGemini === undefined ? {} : { discover: discoverGemini })
   ctx.llm.registerAdapter([PROVIDER], anthropicAdapter)
   ctx.llm.registerAdapter([GEMINI_PROVIDER], geminiAdapter)
 
@@ -272,7 +277,7 @@ export function apply(ctx: HostContext, config: Config): void {
   ctx.logger.info(
     `google-vertex: providers "${PROVIDER}" and "${GEMINI_PROVIDER}" registered for project ${anthropic.project}`
     + ` (location ${anthropic.location}, credentials ${resolved.serviceAccountFile})`
-    + ` — Claude: ${anthropic.models.map(model => model.id).join(', ')}`
-    + ` — Gemini: ${gemini.models.map(model => model.id).join(', ')} (+ live discovery)`,
+    + `. Claude: ${anthropic.models.map(model => model.id).join(', ')}`
+    + `. Gemini: ${gemini.models.map(model => model.id).join(', ')}${pinnedGemini ? '' : ' (+ live discovery)'}`,
   )
 }
