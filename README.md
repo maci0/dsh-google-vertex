@@ -50,7 +50,7 @@ Override the row by id in `~/.dsh/profiles/web/cordis.patch.yml`:
 | `project` | `$GOOGLE_CLOUD_PROJECT`, `$GCLOUD_PROJECT`, then the file's `project_id` | Google Cloud project id, used by both routes. |
 | `location` | `$GOOGLE_CLOUD_LOCATION`, then `global` | Region for both endpoints, or `global` for `aiplatform.googleapis.com`. |
 | `models` | the Claude catalog below | Claude ids to advertise, replacing the built-in catalog. Any id is accepted at request time regardless. |
-| `geminiModels` | the Gemini catalog below | Gemini ids to advertise. Every entry serves the same context/output pair. |
+| `geminiModels` | the Gemini catalog below | Gemini ids to advertise, served as written: a configured list turns live discovery off. Every entry serves the same context/output pair. |
 | `contextWindow` | `200000` | Claude context window reported per model. |
 | `maxTokens` | `32000` | Claude output cap applied when a caller omits one. |
 | `streamIdleTimeoutMs` | `300000` | Bound on the interval between two stream reads, on both routes. |

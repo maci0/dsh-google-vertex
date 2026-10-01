@@ -121,3 +121,48 @@ test('a committed settings write drops the cached catalog, so the next read re-d
     globalThis.fetch = realFetch
   }
 })
+
+test('a configured Gemini catalog is served as configured, without discovery', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-google-vertex-pinned-'))
+  const accountPath = join(dir, 'service-account.json')
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  })
+  writeFileSync(accountPath, JSON.stringify({
+    type: 'service_account',
+    project_id: 'pinned-project',
+    client_email: 'sa@example.iam.gserviceaccount.com',
+    private_key: privateKey,
+    token_uri: 'https://oauth2.googleapis.com/token',
+  }))
+
+  let catalogs = 0
+  const realFetch = globalThis.fetch
+  globalThis.fetch = ((input: string | URL | Request): Promise<Response> => {
+    if (String(input).includes('oauth2.googleapis.com')) {
+      return Promise.resolve(new Response(JSON.stringify({ access_token: 'token', expires_in: 3600 }), { status: 200 }))
+    }
+    catalogs += 1
+    return Promise.resolve(new Response(JSON.stringify({
+      publisherModels: [{ name: 'publishers/google/models/gemini-9-pro' }],
+    }), { status: 200 }))
+  }) as typeof globalThis.fetch
+
+  try {
+    const ctx = new Context()
+    const llm = new StubLlm(ctx)
+    const fiber = await ctx.plugin(plugin as unknown as Plugin, {
+      serviceAccountFile: accountPath,
+      geminiModels: ['gemini-2.5-pro-002'],
+    })
+    const gemini = llm.routes.get(plugin.GEMINI_PROVIDER) as RefreshableAdapter
+    const listed = await gemini.listModels(plugin.GEMINI_PROVIDER)
+    assert.deepEqual(listed.map(model => model.id), ['gemini-2.5-pro-002'])
+    assert.equal(catalogs, 0, 'a pinned catalog makes no catalog request')
+    await fiber.dispose()
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
