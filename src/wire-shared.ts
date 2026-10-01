@@ -27,7 +27,7 @@ export function systemParts(options: GenerateOptions): string[] {
   const parts: string[] = []
   if (options.system !== undefined && options.system.length > 0) parts.push(options.system)
   for (const message of options.messages) {
-    if (message.role !== 'system') continue
+    if (message.role !== 'system' && message.role !== 'developer') continue
     for (const block of message.content) {
       if (block.type === 'text' && typeof block.text === 'string' && block.text.length > 0) parts.push(block.text)
     }

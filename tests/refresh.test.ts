@@ -92,7 +92,7 @@ test('a committed settings write drops the cached catalog, so the next read re-d
     const ctx = new Context()
     const llm = new StubLlm(ctx)
 
-    const fiber = await ctx.plugin(plugin as unknown as Plugin, { serviceAccountFile: accountPath })
+    const fiber = await ctx.plugin(plugin as unknown as Plugin, { serviceAccountFile: accountPath, streamIdleTimeoutMs: 30 })
 
     const gemini = llm.routes.get(plugin.GEMINI_PROVIDER) as RefreshableAdapter
     const anthropic = llm.routes.get(plugin.PROVIDER) as RefreshableAdapter
@@ -116,6 +116,26 @@ test('a committed settings write drops the cached catalog, so the next read re-d
     await gemini.listModels(plugin.GEMINI_PROVIDER)
     assert.equal(catalogs, 2, 'Gemini re-discovered after the refresh')
     assert.deepEqual(await anthropic.listModels(plugin.PROVIDER), claude, 'the Claude catalog is unchanged')
+
+    // A hung provider catalog must settle on the configured timeout and fall
+    // back, rather than leaving every model picker awaiting the same request.
+    ctx.emit('loader/volatile-update', [['revalidatedAt']])
+    let catalogSignal: AbortSignal | null | undefined
+    globalThis.fetch = (async (_input, init) => {
+      catalogSignal = init?.signal
+      assert.ok(init?.signal instanceof AbortSignal, 'discovery must supply cancellation')
+      const signal = init.signal
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }) as typeof globalThis.fetch
+    const keepAlive = setTimeout(() => {}, 1000)
+    try {
+      const fallback = await gemini.listModels(plugin.GEMINI_PROVIDER)
+      assert.ok(fallback.length > 0)
+      assert.equal(catalogSignal?.aborted, true, 'the hung discovery was cancelled')
+      assert.ok(!fallback.some((model) => model.id === 'gemini-9-pro'), 'refresh uses the static fallback after timeout')
+    } finally { clearTimeout(keepAlive) }
 
     await fiber.dispose()
   } finally {

@@ -236,7 +236,7 @@ function toolResultContent(message: GenerateOptions['messages'][number]): WireCo
 export function buildRequestBody(options: GenerateOptions, config: VertexWireConfig): WireRequestBody {
   const messages: WireMessage[] = []
   for (const message of options.messages) {
-    if (message.role === 'system') continue
+    if (message.role === 'system' || message.role === 'developer') continue
     const role = message.role === 'assistant' ? 'assistant' : 'user'
     const content = message.role === 'tool' ? toolResultContent(message) : messageContent(message)
     if (content.length === 0) continue

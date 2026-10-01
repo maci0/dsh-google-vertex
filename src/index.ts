@@ -259,7 +259,7 @@ export function apply(ctx: HostContext, config: Config): void {
   const pinnedGemini = row.geminiModels !== undefined && row.geminiModels.length > 0
   const discoverGemini = pinnedGemini
     ? undefined
-    : () => fetchGeminiModels(gemini.location, tokenSource, fetchFn)
+    : () => fetchGeminiModels(gemini.location, tokenSource, fetchFn, AbortSignal.timeout(Math.ceil(gemini.streamIdleTimeoutMs)))
 
   const anthropicAdapter = new GoogleVertexAnthropicAdapter(anthropic)
   const geminiAdapter = new GoogleVertexGeminiAdapter(gemini, discoverGemini === undefined ? {} : { discover: discoverGemini })

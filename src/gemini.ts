@@ -355,7 +355,7 @@ export function buildGeminiRequest(options: GenerateOptions, config: VertexWireC
   const names = toolNames(options.messages)
   const contents: GeminiContent[] = []
   for (const message of options.messages) {
-    if (message.role === 'system') continue
+    if (message.role === 'system' || message.role === 'developer') continue
     const role = message.role === 'assistant' ? 'model' : 'user'
     const parts = message.role === 'tool'
       ? toolResultParts(message, names)

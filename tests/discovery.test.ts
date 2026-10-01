@@ -191,3 +191,19 @@ test('fetchGeminiModels uses the regional endpoint for a region', async () => {
   assert.deepEqual(await fetchGeminiModels('us-east4', tokenSource, fetch), [])
   assert.equal(calledUrl, 'https://us-east4-aiplatform.googleapis.com/v1beta1/publishers/google/models')
 })
+
+
+test('a refresh detaches an older catalog read and prevents it replacing fresh models', async () => {
+  const cache = new ModelCache([{ id: 'fallback', name: 'Fallback' }])
+  let resolveOld!: (models: { id: string; name: string }[]) => void
+  const old = cache.get(() => new Promise((resolve) => { resolveOld = resolve }))
+  cache.invalidate()
+  const fresh = [{ id: 'fresh', name: 'Fresh' }]
+  const current = cache.get(async () => fresh)
+  const arrived = await Promise.race([current, new Promise((resolve) => { setTimeout(() => resolve('still waiting'), 100) })])
+  assert.notEqual(arrived, 'still waiting', 'the new catalog must not wait for the pre-refresh request')
+  assert.deepEqual(await current, fresh)
+  resolveOld([{ id: 'old', name: 'Old' }])
+  await old
+  assert.deepEqual(await cache.get(), fresh)
+})

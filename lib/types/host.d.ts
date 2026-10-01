@@ -40,7 +40,7 @@ export interface Message {
      * The harness carries a tool result as its own `tool`-role message, with the
      * call identity and error flag on the message rather than in its content.
      */
-    readonly role: 'system' | 'user' | 'assistant' | 'tool';
+    readonly role: 'system' | 'developer' | 'user' | 'assistant' | 'tool';
     readonly content: readonly ContentBlock[];
     /** Tool-role only: the provider call id this message answers. */
     readonly toolCallId?: string;

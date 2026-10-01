@@ -265,8 +265,8 @@ export class ServiceAccountTokens {
     const text = await response.text().catch(() => '')
     if (!response.ok) {
       throw new VertexAuthError(
-        'AUTH',
-        `google-vertex: token endpoint refused the service account (HTTP ${response.status})`
+        response.status === 408 || response.status === 429 || response.status >= 500 ? 'TRANSPORT' : 'AUTH',
+        `google-vertex: token endpoint failed (HTTP ${response.status})`
         + `${text.length > 0 ? `: ${text.slice(0, 300)}` : ''}`,
       )
     }

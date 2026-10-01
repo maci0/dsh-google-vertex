@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import { buildGeminiRequest } from '../src/gemini.ts'
 import type { GenerateOptions } from '../src/host.ts'
 import {
   buildRequestBody,
@@ -336,4 +337,20 @@ test('events after a terminal event are ignored', () => {
     { type: 'message_stop' },
   ])
   assert.deepEqual(translator.handle({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }), [])
+})
+
+
+test('both Vertex routes retain developer instructions in the system slot', () => {
+  const request: GenerateOptions = { model: 'model', messages: [
+    { id: 'system', role: 'system', content: [{ type: 'text', text: 'system instruction' }] },
+    { id: 'developer', role: 'developer', content: [{ type: 'text', text: 'developer instruction' }] },
+    { id: 'user', role: 'user', content: [{ type: 'text', text: 'question' }] },
+  ] }
+  const claude = buildRequestBody(request, CONFIG)
+  assert.deepEqual(claude.system?.map((block) => block.text), ['system instruction', 'developer instruction'])
+  assert.equal(claude.messages.length, 1)
+  assert.equal(claude.messages[0]?.content.length, 1)
+  const gemini = buildGeminiRequest(request, CONFIG)
+  assert.equal(gemini.systemInstruction?.parts[0]?.text, 'system instruction\n\ndeveloper instruction')
+  assert.deepEqual(gemini.contents, [{ role: 'user', parts: [{ text: 'question' }] }])
 })

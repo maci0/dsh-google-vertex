@@ -24,7 +24,7 @@ Nothing is copied into the harness credential store: the file is read once at mo
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.3
+dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.4
 ```
 
 Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).

@@ -203,7 +203,7 @@ export class ModelCache {
 
     const operation = fetchFn().then((models) => {
       if (models.length > 0) {
-        this.#cached = { models, expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS }
+        if (this.#inflight === operation) this.#cached = { models, expiresAt: Date.now() + DEFAULT_CACHE_TTL_MS }
         return models
       }
       // Empty result: use fallback rather than showing nothing.
@@ -221,5 +221,6 @@ export class ModelCache {
   /** Force the next `get` to re-fetch. */
   invalidate(): void {
     this.#cached = undefined
+    this.#inflight = undefined
   }
 }

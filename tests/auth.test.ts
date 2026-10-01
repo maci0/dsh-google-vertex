@@ -160,3 +160,15 @@ test('a bodiless 200 is refused rather than cached as undefined', async () => {
   const good = new ServiceAccountTokens(ACCOUNT, { fetch: stubFetch(3600).fetch })
   assert.equal(await good.get(), 'token-1')
 })
+
+
+test('temporary token endpoint failures are transport errors, not rejected credentials', async () => {
+  for (const status of [400, 401, 408, 429, 500, 503]) {
+    const tokens = new ServiceAccountTokens(ACCOUNT, { fetch: async () => new Response('unavailable', { status }) })
+    await assert.rejects(tokens.get(), (error: unknown) => {
+      assert.ok(error instanceof VertexAuthError)
+      assert.equal(error.code, status === 400 || status === 401 ? 'AUTH' : 'TRANSPORT', `HTTP ${status}`)
+      return true
+    })
+  }
+})
