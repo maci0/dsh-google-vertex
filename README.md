@@ -147,16 +147,16 @@ Two of its catalog entries disagree with Vertex's own limits, so those models ne
 ## Development
 
 ```sh
-npm test           # node --test tests/*.test.ts: hermetic, stubbed transport, no network
-npm run build      # tsc -p tsconfig.build.json → lib/index.js + lib/types/
-npm run typecheck  # tsc -p tsconfig.json
+bun test           # hermetic, stubbed transport, no network
+bun run build      # tsc -p tsconfig.build.json → lib/index.js + lib/types/
+bun run typecheck  # tsc -p tsconfig.json
 ```
 
-The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `npm run build` before it takes effect. For local development, run `npm run build`, then `dsh plugin --profile <name> add <path-to-checkout>` and restart `dsh web`. `lib/client.js` is the exception: the browser half is authored directly as plain JavaScript in the client module loader's factory format and is not produced by `tsc`.
+The package ships the built `lib/` and declares `dsh.bundle`, so a change to `src/` needs `bun run build` before it takes effect. For local development, run `bun run build`, then `dsh plugin --profile <name> add <path-to-checkout>` and restart `dsh web`. `lib/client.js` is the exception: the browser half is authored directly as plain JavaScript in the client module loader's factory format and is not produced by `tsc`.
 
 Coverage: the signed assertion, token caching and refresh, both auth failure classes, request projection, cache breakpoints, Gemini request projection with signature replay, SSE framing across split chunks, every terminal finish class (including the stream idle bound and an in-band provider error envelope), usage reported only when the provider reported it, and configuration validation. A real Cordis `Context` mount proves both routes are registered and withdrawn with the fiber, and that the plugin's settings change drops both cached catalogs. The browser half is imported from `lib/client.js` under a stub of the module loader's own registration format, which is how its slot, its Refresh control, and its write are covered without a browser.
 
-Requires Node `^22.19.0 || >=24.0.0`.
+dsh loads plugins on Node `^22.19.0 || >=24.0.0`; development and tests run on bun.
 
 ## Licence
 
