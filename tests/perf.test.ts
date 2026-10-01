@@ -26,12 +26,11 @@ const RECORDS = 20_000
 
 /**
  * Median CPU milliseconds this workload cost on the recorded host, and the
- * tolerance multiplier. Baseline: AMD Ryzen 9 9950X, node v26.9.0, pinned to
- * one core (`taskset -c 2`). The runner itself roughly doubles this number, so
- * the constant is the median observed under `node --test`, not under a bare
- * script.
+ * tolerance multiplier. Baseline: AMD Ryzen 9 9950X, bun 1.4.2, measured inside
+ * a full `bun test` run (17-23ms); pinned to one core with `taskset -c 2` the
+ * same workload costs 10-13ms, so the constant is the in-runner median.
  */
-const BASELINE_CPU_MS = 45
+const BASELINE_CPU_MS = 22
 const TOLERANCE = 4
 
 /** A deterministic byte source, so every run replays the identical stream. */
