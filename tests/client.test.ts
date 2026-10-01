@@ -1,20 +1,31 @@
 /**
  * Browser-half tests: the bundle is plain JavaScript in the client module
  * loader's factory format, so it is evaluated here the same way the browser
- * module system evaluates it — through a minimal `window.__ModuleLoader__` and
- * a React stub whose hooks can be re-rendered after a click.
+ * module system evaluates it: imported as a module under a minimal
+ * `window.__ModuleLoader__`, with a React stub whose hooks can be re-rendered
+ * after a click.
  *
  * @module dsh-google-vertex/tests/client
  */
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
 
-const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-const bundlePath = join(packageRoot, 'lib', 'client.js')
+/** What the bundle hands `window.__ModuleLoader__.load`. */
+interface Registration {
+  id: string
+  factory: (require: (id: string) => unknown) => Record<string, unknown>
+}
+
+/**
+ * The bundle registers itself on `window.__ModuleLoader__` when evaluated, so a
+ * stub loader is installed and the shipped file is imported once as a real
+ * module; each test then runs the captured factory for a fresh instance.
+ */
+let captured: Registration | undefined
+Object.assign(globalThis, { window: { __ModuleLoader__: { load: (registration: Registration): void => { captured = registration } } } })
+await import(new URL('../lib/client.js', import.meta.url).href)
+const registration = captured
 
 interface Element {
   type: unknown
@@ -99,18 +110,15 @@ function loadBundle(snapshot: Snapshot, writes: unknown[][]) {
     },
   }
 
-  let loaded: { id: string; factory: (require: (id: string) => unknown) => Record<string, unknown> } | undefined
-  const windowStub = { __ModuleLoader__: { load: (registration: typeof loaded): void => { loaded = registration } } }
   const requireFn = (id: string): unknown => {
     assert.equal(id, 'react', `the bundle may only require react, got ${id}`)
     return react
   }
 
-  new Function('window', 'require', readFileSync(bundlePath, 'utf8'))(windowStub, requireFn)
-  assert.ok(loaded, 'the bundle registered itself on window.__ModuleLoader__')
-  assert.equal(loaded.id, 'dsh-google-vertex')
+  assert.ok(registration, 'the bundle registered itself on window.__ModuleLoader__')
+  assert.equal(registration.id, 'dsh-google-vertex')
 
-  const exported = loaded.factory(requireFn)
+  const exported = registration.factory(requireFn)
   ;(exported['apply'] as (ctx: unknown) => void)(ctx)
   return { exported, bound, injected, registered, registeredLocales, react }
 }
