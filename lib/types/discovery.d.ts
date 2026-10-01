@@ -5,7 +5,7 @@
  * (`publishers/google/models`). Anthropic models have no listing endpoint on
  * Vertex, so the adapter serves the catalog from configuration instead.
  *
- * Results are cached with a configurable TTL so the model picker does not
+ * Results are cached for five minutes so the model picker does not
  * make a network call on every open.
  *
  * @module dsh-google-vertex/discovery
@@ -15,9 +15,11 @@ import type { TokenProvider, VertexModel } from './adapter.ts';
 /** How long a cached model list stays valid, in milliseconds. */
 export declare const DEFAULT_CACHE_TTL_MS: number;
 /**
- * Fetch all Gemini models from the Vertex publishers/google/models endpoint.
+ * Fetch the Gemini text models from Vertex's `publishers/google/models` list.
  *
- * Follows pagination and filters to models that support content generation.
+ * Follows pagination and keeps `gemini-` ids minus the variants named in
+ * {@link NON_TEXT_SEGMENTS}. A built-in id keeps its built-in name; any other
+ * is named by its id.
  * @param location - configured Vertex region, or `global`.
  * @param tokens - token source for bearer authentication.
  * @param fetchFn - transport.

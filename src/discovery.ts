@@ -5,7 +5,7 @@
  * (`publishers/google/models`). Anthropic models have no listing endpoint on
  * Vertex, so the adapter serves the catalog from configuration instead.
  *
- * Results are cached with a configurable TTL so the model picker does not
+ * Results are cached for five minutes so the model picker does not
  * make a network call on every open.
  *
  * @module dsh-google-vertex/discovery
@@ -13,33 +13,41 @@
 
 import type { FetchLike } from './auth.ts'
 import type { TokenProvider, VertexModel } from './adapter.ts'
+import { DEFAULT_GEMINI_MODELS } from './gemini.ts'
 import { endpointOrigin } from './wire.ts'
 
 /** How long a cached model list stays valid, in milliseconds. */
 export const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000
 
-/** Vertex API version for the model list endpoint. */
-const API_VERSION = 'v1'
+/**
+ * Vertex API version for the model list endpoint. `publishers.models.list`
+ * exists only in v1beta1; v1 serves `get` alone.
+ */
+const API_VERSION = 'v1beta1'
 
-/** Response shape from the Vertex publishers/google/models list endpoint. */
+/** Most catalog pages read before giving up on a misbehaving endpoint. */
+const MAX_PAGES = 10
+
+/**
+ * Id segments naming a Gemini variant this text route cannot drive: embedding,
+ * speech, image output, and the Live API.
+ */
+const NON_TEXT_SEGMENTS: ReadonlySet<string> = new Set(['embedding', 'tts', 'image', 'live', 'audio'])
+
+/** `ListPublisherModelsResponse`, narrowed to the fields read here. */
 interface PublisherModelsResponse {
-  models?: PublisherModelEntry[]
+  publisherModels?: PublisherModelEntry[]
   nextPageToken?: string
 }
 
-/** One model entry from the Vertex catalog. */
+/**
+ * One `PublisherModel`, narrowed to the field read here. It carries no display
+ * name, and its `supportedActions` describes console actions rather than API
+ * verbs, so neither can name or filter a model.
+ */
 interface PublisherModelEntry {
   /** Resource name, e.g. `publishers/google/models/gemini-2.5-pro`. */
   name?: string
-  /** Display name. */
-  displayName?: string
-  /** Model description. */
-  description?: string
-  /**
-   * Supported methods — only models that support `generateContent` or
-   * `streamGenerateContent` are useful to this adapter.
-   */
-  supportedActions?: string[]
 }
 
 /** Cached model list with an expiry timestamp. */
@@ -51,7 +59,7 @@ interface CachedModels {
 /**
  * Extract the model id from a Vertex resource name.
  *
- * A resource name looks like `publishers/google/models/gemini-2.5-pro` — the
+ * A resource name looks like `publishers/google/models/gemini-2.5-pro`: the
  * model id is the last segment. A name without a `/` is returned as-is.
  * @param resourceName - the `name` field from the catalog entry.
  * @returns the bare model id.
@@ -59,6 +67,15 @@ interface CachedModels {
 function modelIdFromResource(resourceName: string): string {
   const lastSlash = resourceName.lastIndexOf('/')
   return lastSlash >= 0 ? resourceName.slice(lastSlash + 1) : resourceName
+}
+
+/**
+ * True for a Gemini id this route can serve: the publisher catalog also lists
+ * Imagen, Veo, embedding, and speech models.
+ * @param id - bare model id.
+ */
+function isGeminiTextModel(id: string): boolean {
+  return id.startsWith('gemini-') && !id.split('-').some(segment => NON_TEXT_SEGMENTS.has(segment))
 }
 
 /**
@@ -74,10 +91,6 @@ function listModelsUrl(location: string, publisher: string): string {
 
 /**
  * Fetch one page of publisher models from the Vertex Model Garden catalog.
- *
- * The catalog lists all published models — not access-filtered — so every
- * model returned here should be callable with the configured project's
- * credentials. The caller filters to generative models.
  * @param url - the list endpoint URL, possibly with a pageToken.
  * @param token - bearer token for authentication.
  * @param fetchFn - transport.
@@ -107,9 +120,11 @@ async function fetchPage(
 }
 
 /**
- * Fetch all Gemini models from the Vertex publishers/google/models endpoint.
+ * Fetch the Gemini text models from Vertex's `publishers/google/models` list.
  *
- * Follows pagination and filters to models that support content generation.
+ * Follows pagination and keeps `gemini-` ids minus the variants named in
+ * {@link NON_TEXT_SEGMENTS}. A built-in id keeps its built-in name; any other
+ * is named by its id.
  * @param location - configured Vertex region, or `global`.
  * @param tokens - token source for bearer authentication.
  * @param fetchFn - transport.
@@ -124,32 +139,18 @@ export async function fetchGeminiModels(
 ): Promise<readonly VertexModel[]> {
   const bearer = await tokens.get(signal)
   const models: VertexModel[] = []
-  let url = listModelsUrl(location, 'google')
+  const url = listModelsUrl(location, 'google')
   let pageToken: string | undefined
 
-  // Paginate through the catalog. Cap at 10 pages to avoid infinite loops
-  // from a misbehaving endpoint.
-  for (let page = 0; page < 10; page++) {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const pageUrl = pageToken !== undefined ? `${url}?pageToken=${encodeURIComponent(pageToken)}` : url
     const response = await fetchPage(pageUrl, bearer, fetchFn, signal)
 
-    for (const entry of response.models ?? []) {
-      if (entry.name === undefined) continue
+    for (const entry of response.publisherModels ?? []) {
+      if (typeof entry.name !== 'string') continue
       const id = modelIdFromResource(entry.name)
-      if (id.length === 0) continue
-
-      // Only include models that support content generation.
-      // The catalog may include embedding, vision-only, or code models
-      // that this adapter cannot drive.
-      const actions = entry.supportedActions ?? []
-      const generative = actions.length === 0
-        || actions.includes('generateContent')
-        || actions.includes('streamGenerateContent')
-
-      if (!generative) continue
-
-      const name = entry.displayName ?? id
-      models.push({ id, name: `${name} (Vertex)` })
+      if (!isGeminiTextModel(id)) continue
+      models.push(DEFAULT_GEMINI_MODELS.find(model => model.id === id) ?? { id, name: `${id} (Vertex)` })
     }
 
     pageToken = response.nextPageToken

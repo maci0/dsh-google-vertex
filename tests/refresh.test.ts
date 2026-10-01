@@ -83,7 +83,7 @@ test('a committed settings write drops the cached catalog, so the next read re-d
     }
     catalogs += 1
     return Promise.resolve(new Response(JSON.stringify({
-      models: [{ name: 'publishers/google/models/gemini-9-live', displayName: 'Gemini 9 Live' }],
+      publisherModels: [{ name: 'publishers/google/models/gemini-9-pro' }],
     }), { status: 200 }))
   }) as typeof globalThis.fetch
 
@@ -97,7 +97,7 @@ test('a committed settings write drops the cached catalog, so the next read re-d
     const anthropic = llm.routes.get(plugin.PROVIDER) as RefreshableAdapter
 
     const discovered = await gemini.listModels(plugin.GEMINI_PROVIDER)
-    assert.ok(discovered.some(model => model.id === 'gemini-9-live'), 'the first read discovers live models')
+    assert.ok(discovered.some(model => model.id === 'gemini-9-pro'), 'the first read discovers live models')
     assert.equal(catalogs, 1)
 
     // While the five-minute cache holds, the route does not reach the provider.
