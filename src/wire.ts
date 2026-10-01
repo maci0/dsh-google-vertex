@@ -346,23 +346,27 @@ export function mapStopReason(reason: string | undefined): FinishReason {
   }
 }
 
-/** Extract the provider's message from a failure body, when it is JSON. */
-function failureMessage(body: string): string {
+/**
+ * Extract the provider's message, and Google's canonical `status` when the
+ * envelope carries one, from a failure body.
+ */
+function failureDetail(body: string): { message: string; status: string } {
   try {
     const parsed: unknown = JSON.parse(body)
     if (typeof parsed === 'object' && parsed !== null) {
       const error = (parsed as Record<string, unknown>)['error']
       if (typeof error === 'object' && error !== null) {
-        const message = (error as Record<string, unknown>)['message']
-        if (typeof message === 'string') return message
+        const fields = error as Record<string, unknown>
+        const status = typeof fields['status'] === 'string' ? fields['status'] : ''
+        if (typeof fields['message'] === 'string') return { message: fields['message'], status }
       }
       const message = (parsed as Record<string, unknown>)['message']
-      if (typeof message === 'string') return message
+      if (typeof message === 'string') return { message, status: '' }
     }
   } catch {
     // Not JSON: the raw body is the most specific thing available.
   }
-  return body.slice(0, 300).replace(/\s+/g, ' ').trim()
+  return { message: body.slice(0, 300).replace(/\s+/g, ' ').trim(), status: '' }
 }
 
 /**
@@ -370,16 +374,18 @@ function failureMessage(body: string): string {
  *
  * Two refusals carry a code of their own because the harness treats them
  * differently: an oversized request must not be retried, and an exhausted quota
- * is a capacity problem rather than an invalid one.
+ * is a capacity problem rather than an invalid one. Google names the quota in
+ * the envelope's `status` (`RESOURCE_EXHAUSTED`), so that is read as well as
+ * the message, exactly as {@link failureForEvent} reads an in-band envelope.
  * @param status - HTTP status.
  * @param body - response body text.
  * @param subject - route description named in the failure.
  * @returns the failure to report.
  */
 export function failureForStatus(status: number, body: string, subject: string): LlmFailure {
-  const detail = failureMessage(body)
-  const message = `google-vertex: ${subject} — HTTP ${status}${detail.length > 0 ? `: ${detail}` : ''}`
-  return { message, code: codeForDetail(detail) ?? codeForStatus(status), status }
+  const detail = failureDetail(body)
+  const message = `google-vertex: ${subject} — HTTP ${status}${detail.message.length > 0 ? `: ${detail.message}` : ''}`
+  return { message, code: codeForDetail(`${detail.status} ${detail.message}`) ?? codeForStatus(status), status }
 }
 
 /**
