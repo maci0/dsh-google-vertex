@@ -8,7 +8,7 @@
 #   google-vertex-gemini:    Gemini (publishers/google)
 - insert:
     - id: google-vertex
-      name: 'dsh-google-vertex'
+      name: '@maci0/dsh-google-vertex'
       config:
         # Service-account JSON path ('~' allowed). Left unset here so the
         # $GOOGLE_APPLICATION_CREDENTIALS fallback applies; a deployment that

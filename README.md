@@ -24,10 +24,12 @@ Nothing is copied into the harness credential store: the file is read once at mo
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.4
+dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.5
 ```
 
-Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the same command with the newer tag, then restart `dsh web` (bundle layers compose at boot).
+Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the
+same command with the newer tag, then restart `dsh web` (bundle layers compose
+at boot).
 
 The package declares `dsh.bundle`, so `dsh plugin` appends it to `dsh.profile.bundles` and the package's own `cordis.patch.yml` inserts the `google-vertex` row: there is no row to paste. Adding that row by hand while the package is a bundle mounts the plugin twice, because `insert` does not dedupe ids.
 
