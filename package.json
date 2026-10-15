@@ -1,6 +1,6 @@
 {
   "name": "@maci0/dsh-google-vertex",
-  "version": "0.12.5",
+  "version": "0.12.6",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
@@ -58,7 +58,7 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.5-alpha.1",
+    "@deepseek-ai/cordis": "4.0.5-alpha.2",
     "@deepseek-ai/dsh-client-locale": "*",
     "@deepseek-ai/dsh-client-ui-plugin-manager": "*",
     "@deepseek-ai/dsh-client-ui-renderer": "*",
@@ -79,7 +79,7 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.5-alpha.1",
+    "@deepseek-ai/cordis": "4.0.5-alpha.2",
     "@types/node": "^22.20.2",
     "typescript": "^7.0.2"
   },
@@ -89,7 +89,7 @@
   },
   "icon": "./icon.svg",
   "dependencies": {
-    "@deepseek-ai/dsh-llm": "0.2.1-alpha.2",
-    "@deepseek-ai/schemastery": "3.18.5-alpha.1"
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.3",
+    "@deepseek-ai/schemastery": "3.18.5-alpha.2"
   }
 }
