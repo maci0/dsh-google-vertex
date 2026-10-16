@@ -235,6 +235,11 @@ export class ServiceAccountTokens {
     }
   }
 
+  /** A late rejection of an old bearer must not evict a newer one. */
+  invalidate(token: string): void {
+    if (this.#cached?.value === token) this.#cached = undefined
+  }
+
   /** Mint one token and cache it. */
   async #mint(signal?: AbortSignal): Promise<string> {
     const nowSeconds = Math.floor(this.#now() / 1000)

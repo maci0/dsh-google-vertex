@@ -8,6 +8,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 
 import {
   buildGeminiRequest,
@@ -269,6 +270,16 @@ test('the translator joins split text parts into one block and closes it once', 
   ])
 })
 
+test('a signature-only final text delta is retained in replay without adding text', () => {
+  const translator = new GeminiStreamTranslator(MODEL)
+  translator.handle({ candidates: [{ content: { parts: [{ text: 'answer' }] } }] })
+  assert.deepEqual(translator.handle({ candidates: [{ content: { parts: [{ text: '', thoughtSignature: 'tail-signature' }] }, finishReason: 'STOP' }] }), [])
+  assert.deepEqual(translator.finish().at(-1), {
+    type: 'finish', reason: { kind: 'stop' },
+    replayState: geminiReplayState(MODEL, [{ type: 'text', thoughtSignature: 'tail-signature' }]),
+  })
+})
+
 test('a function call becomes a complete tool-call block with its signature recorded', () => {
   const translator = new GeminiStreamTranslator(MODEL)
   const emitted = translator.handle({
@@ -304,6 +315,35 @@ test('a function call becomes a complete tool-call block with its signature reco
     reason: { kind: 'tool-calls' },
     replayState: geminiReplayState(MODEL, [{ type: 'text' }, { type: 'tool-call', thoughtSignature: 'sig-1' }]),
   })
+})
+
+test('a thought-only output cap preserves its length stop and billed usage', () => {
+  const translator = new GeminiStreamTranslator(MODEL)
+  translator.handle({
+    candidates: [{ content: { parts: [{ thought: true, text: 'thinking' }] }, finishReason: 'MAX_TOKENS' }],
+    usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 0, thoughtsTokenCount: 65535, totalTokenCount: 65655 },
+  })
+  assert.equal(translator.sawFinish, true)
+  assert.deepEqual(translator.finish(), [
+    { type: 'usage', usage: { inputTokens: 120, outputTokens: 65535, reasoningTokens: 65535, totalTokens: 65655 } },
+    { type: 'finish', reason: { kind: 'max-tokens' }, replayState: geminiReplayState(MODEL, []) },
+  ])
+})
+
+test('a complete function call at the output cap survives harness assembly with its signature', () => {
+  const translator = new GeminiStreamTranslator(MODEL)
+  const chunks = translator.handle({
+    candidates: [{
+      content: { parts: [{ functionCall: { name: 'read', args: { path: 'README.md' }, id: 'call_1' }, thoughtSignature: 'sig-cap' }] },
+      finishReason: 'MAX_TOKENS',
+    }],
+  })
+  const assembler = new BlockAssembler()
+  for (const chunk of [...chunks, ...translator.finish()]) assembler.push(chunk as Parameters<BlockAssembler['push']>[0])
+  assert.deepEqual(assembler.blocks(), [{ type: 'tool-call', id: 'call_1', name: 'read', arguments: '{"path":"README.md"}' }])
+  assert.deepEqual(assembler.replayState, geminiReplayState(MODEL, [{ type: 'tool-call', thoughtSignature: 'sig-cap' }]))
+  assert.deepEqual(assembler.finish, { kind: 'tool-calls' })
+  assert.equal(mapGeminiFinishReason('SAFETY', true).kind, 'error', 'a safety rejection still takes precedence')
 })
 
 test('an in-band error envelope ends the stream with the provider classification', () => {
@@ -342,9 +382,10 @@ test('thought summaries are dropped and a contentless response is an empty-respo
       content: { role: 'model', parts: [{ thought: true, text: 'thinking hard' }] },
       finishReason: 'STOP',
     }],
+    usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 0, thoughtsTokenCount: 3, totalTokenCount: 5 },
   })
   assert.deepEqual(emitted, [])
-  assert.deepEqual(translator.finish(), [{
+  assert.deepEqual(translator.finish(), [{ type: 'usage', usage: { inputTokens: 2, outputTokens: 3, reasoningTokens: 3, totalTokens: 5 } }, {
     type: 'finish',
     reason: {
       kind: 'error',

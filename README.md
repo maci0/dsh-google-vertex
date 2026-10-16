@@ -24,12 +24,11 @@ Nothing is copied into the harness credential store: the file is read once at mo
 > would win).
 
 ```sh
-dsh plugin --profile web add github:maci0/dsh-google-vertex#v0.12.6
+dsh plugin --profile web add --save-exact @maci0/dsh-google-vertex@0.13.0
 ```
 
-Pin a release tag: a bare `github:` spec floats on `main`. To upgrade, run the
-same command with the newer tag, then restart `dsh web` (bundle layers compose
-at boot).
+Pin an exact npm version. To upgrade, run the same command with the newer
+version, then restart `dsh web` (bundle layers compose at boot).
 
 The package declares `dsh.bundle`, so `dsh plugin` appends it to `dsh.profile.bundles` and the package's own `cordis.patch.yml` inserts the `google-vertex` row: there is no row to paste. Adding that row by hand while the package is a bundle mounts the plugin twice, because `insert` does not dedupe ids.
 
@@ -128,6 +127,7 @@ Failed HTTP requests forward valid `Retry-After` seconds or HTTP dates to the ha
 - **Text only.** Both routes declare `inputModalities: ['text']`, so the harness projects images and files to placeholder text before dispatch. Claude and Gemini on Vertex both accept images; wiring the attachment service into these adapters is the work that would add it.
 - **No extended thinking on Claude.** That route never sends a `thinking` block, and replaying one needs a thinking signature the harness reasoning block cannot hold. Enabling thinking without it makes every tool round trip fail.
 - **Gemini thought summaries are dropped** for the same signature reason, so only answer text is shown.
+- **Gemini output limits.** A thought-only `MAX_TOKENS` response keeps its length stop and usage counters. A complete function call remains executable at that limit; safety and malformed-call errors still take precedence. Empty normal completions retain their reported usage.
 - **Vertex AI API must be enabled** on the project, and the service account needs `roles/aiplatform.user`.
 - **Claude is not servable in every region.** `global`, `us-east5`, and `europe-west1` answered; `us-central1` returned `400 FAILED_PRECONDITION: … is not servable in region us-central1`. A `404 NOT_FOUND` naming the publisher model means the id does not exist on Vertex; `429 RESOURCE_EXHAUSTED` is the project's quota, not a bad request.
 - **Claude prompt caching has provider-side minimums.** Blocks under the cacheable minimum are accepted and simply not cached.

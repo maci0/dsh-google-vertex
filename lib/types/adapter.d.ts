@@ -37,6 +37,8 @@ export interface VertexModel {
  */
 export interface TokenProvider {
     get(signal?: AbortSignal): Promise<string>;
+    /** Retire only the bearer the provider rejected. */
+    invalidate?(token: string): void;
 }
 /**
  * Configuration every Vertex adapter row carries. The Claude route adds only

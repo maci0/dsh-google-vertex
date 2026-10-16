@@ -87,6 +87,17 @@ function stubFetch(expiresIn: number): { fetch: FetchLike; calls: () => number; 
   return { fetch, calls: () => calls, requests: () => requests }
 }
 
+test('a rejected bearer is retired without evicting a newer token on a late rejection', async () => {
+  const stub = stubFetch(3600)
+  const tokens = new ServiceAccountTokens(ACCOUNT, { fetch: stub.fetch })
+  assert.equal(await tokens.get(), 'token-1')
+  tokens.invalidate('token-1')
+  assert.equal(await tokens.get(), 'token-2')
+  tokens.invalidate('token-1')
+  assert.equal(await tokens.get(), 'token-2')
+  assert.equal(stub.calls(), 2)
+})
+
 test('tokens are minted once and reused until shortly before expiry', async () => {
   const stub = stubFetch(3600)
   let now = 1_000_000

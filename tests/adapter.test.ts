@@ -83,6 +83,28 @@ test('streams text through the global publisher endpoint with the bearer token',
   assert.equal(body['max_tokens'], 32_000)
 })
 
+test('a provider 401 retires its bearer before the next call', async () => {
+  let bearer = 'old'
+  const seen: string[] = []
+  const adapter = new GoogleVertexAnthropicAdapter(CONFIG, {
+    tokens: { get: async () => bearer, invalidate: (token) => { assert.equal(token, 'old'); bearer = 'new' } },
+    fetch: async (_url, init) => {
+      seen.push((init.headers as Record<string, string>)['authorization'] ?? '')
+      if (seen.length === 1) return new Response('', { status: 401 })
+      return streamResponse([
+        'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"ok"}}\n\n',
+        'data: {"type":"content_block_stop","index":0}\n\n',
+        'data: {"type":"message_stop"}\n\n',
+      ])
+    },
+  })
+  const first = (await collect(adapter, OPTIONS)).at(-1)
+  assert.equal(first?.type === 'finish' && first.reason.kind === 'error' ? first.reason.failure.code : undefined, 'AUTH')
+  const second = (await collect(adapter, OPTIONS)).at(-1)
+  assert.equal(second?.type === 'finish' ? second.reason.kind : undefined, 'stop')
+  assert.deepEqual(seen, ['Bearer old', 'Bearer new'])
+})
+
 test('a tool turn reaches the harness as raw JSON argument deltas', async () => {
   const fetch: FetchLike = () => Promise.resolve(streamResponse([
     'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_9","name":"read","input":{}}}\n\n',
@@ -317,10 +339,11 @@ test('model metadata is the configured catalog plus the resolved capacities', as
 })
 
 
-test('failed requests preserve valid Retry-After delays and omit invalid ones', async () => {
+test('failed requests preserve valid Retry-After delays and omit invalid ones', async (t) => {
+  t.mock.method(Date, 'now', () => Date.UTC(2026, 9, 16))
   const future = new Date(Date.now() + 60_000).toUTCString()
   const cases: [string | undefined, number | undefined][] = [
-    ['12', 12_000], ['0.5', 500], [' 2 ', 2_000], [future, -1],
+    ['12', 12_000], ['0.5', 500], [' 2 ', 2_000], [future, 60_000],
     [undefined, undefined], ['', undefined], ['0', undefined], ['-9999', undefined],
     ['1e3', undefined], ['Infinity', undefined], ['nonsense', undefined],
     ['Wed, 01 Jan 2020 00:00:00 GMT', undefined], ['9'.repeat(400), undefined],
@@ -336,11 +359,7 @@ test('failed requests preserve valid Retry-After delays and omit invalid ones', 
     const failure = finish.reason.failure
     assert.equal(failure.code, 'RATE_LIMIT')
     assert.equal(failure.status, 429)
-    if (expected === -1) {
-      assert.ok(failure.providerRetryAfterMs! > 55_000 && failure.providerRetryAfterMs! <= 60_000)
-    } else {
-      assert.equal(failure.providerRetryAfterMs, expected, String(header))
-      if (expected === undefined) assert.equal('providerRetryAfterMs' in failure, false)
-    }
+    assert.equal(failure.providerRetryAfterMs, expected, String(header))
+    if (expected === undefined) assert.equal('providerRetryAfterMs' in failure, false)
   }
 })

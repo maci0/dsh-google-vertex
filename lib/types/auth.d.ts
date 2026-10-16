@@ -107,5 +107,7 @@ export declare class ServiceAccountTokens {
      *   the token endpoint could not be reached or answered unusably.
      */
     get(signal?: AbortSignal): Promise<string>;
+    /** A late rejection of an old bearer must not evict a newer one. */
+    invalidate(token: string): void;
 }
 export {};

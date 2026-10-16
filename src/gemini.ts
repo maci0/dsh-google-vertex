@@ -441,7 +441,8 @@ export function mapGeminiUsage(usage: GeminiUsageMetadata): TokenUsage {
 export function mapGeminiFinishReason(reason: string | undefined, sawToolCall: boolean): FinishReason {
   switch (reason) {
     case 'MAX_TOKENS':
-      return { kind: 'max-tokens' }
+      // generateContent emits complete call objects, safe to dispatch at the cap.
+      return sawToolCall ? { kind: 'tool-calls' } : { kind: 'max-tokens' }
     case 'SAFETY':
     case 'RECITATION':
     case 'BLOCKLIST':
@@ -518,6 +519,13 @@ export class GeminiStreamTranslator {
       this.#failed = true
       return [{ type: 'finish', reason: { kind: 'error', failure: failureForEvent(error) } }]
     }
+    const blocked = asObject(event['promptFeedback'])?.['blockReason']
+    if (typeof blocked === 'string' && blocked.length > 0 && blocked !== 'BLOCK_REASON_UNSPECIFIED') {
+      this.#failed = true
+      return [{ type: 'finish', reason: { kind: 'error', failure: {
+        code: SAFETY_BLOCKED_CODE, message: `google-vertex: the prompt was blocked (${blocked})`,
+      } } }]
+    }
     const out: StreamChunk[] = []
     const candidates = event['candidates']
     if (Array.isArray(candidates)) {
@@ -567,6 +575,8 @@ export class GeminiStreamTranslator {
     }
 
     const text = part['text']
+    // The final streaming text delta can carry only the signature.
+    if (text === '' && signature !== undefined) this.#setSignature(signature)
     if (typeof text === 'string' && text.length > 0) {
       const open = this.#open
       if (open !== undefined) {
@@ -642,17 +652,20 @@ export class GeminiStreamTranslator {
   finish(): StreamChunk[] {
     const out = this.#closeText()
     const reason = mapGeminiFinishReason(this.#finishReason, this.#sawToolCall)
-    if (this.#replay.length === 0 && reason.kind !== 'error') {
-      return [{
-        type: 'finish',
-        reason: {
-          kind: 'error',
-          failure: {
-            message: 'google-vertex: the model completed the response with no content',
-            code: EMPTY_RESPONSE_CODE,
+    if (this.#replay.length === 0 && reason.kind === 'stop') {
+      return [
+        ...this.#usageReported ? [{ type: 'usage' as const, usage: mapGeminiUsage(this.#usage) }] : [],
+        {
+          type: 'finish',
+          reason: {
+            kind: 'error',
+            failure: {
+              message: 'google-vertex: the model completed the response with no content',
+              code: EMPTY_RESPONSE_CODE,
+            },
           },
         },
-      }]
+      ]
     }
     return [
       ...out,

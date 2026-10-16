@@ -32,6 +32,17 @@ const OPTIONS: GenerateOptions = {
   messages: [{ id: '1', role: 'user', content: [{ type: 'text', text: 'hi' }] }],
 }
 
+test('a prompt-level safety refusal is terminal instead of a truncated transport error', async () => {
+  const adapter = new GoogleVertexGeminiAdapter(CONFIG, {
+    tokens: tokens(),
+    fetch: async () => streamResponse(['data: {"promptFeedback":{"blockReason":"SAFETY"}}\n\n']),
+  })
+  const chunks = await collect(adapter, OPTIONS)
+  assert.equal(chunks.length, 1)
+  const finish = chunks[0]
+  assert.equal(finish?.type === 'finish' && finish.reason.kind === 'error' ? finish.reason.failure.code : undefined, 'SAFETY')
+})
+
 test('streams Gemini text through the publisher endpoint with the bearer token', async () => {
   const requests: { url: string; init: RequestInit }[] = []
   const fetch: FetchLike = (url, init) => {

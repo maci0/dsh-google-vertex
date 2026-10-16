@@ -76,13 +76,18 @@ test('ModelCache shares concurrent in-flight fetches', async () => {
   const fallback = [{ id: 'x', name: 'X' }]
   let calls = 0
   const cache = new ModelCache(fallback)
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
   const fetchFn = async () => {
     calls += 1
-    await new Promise(resolve => setTimeout(resolve, 10))
+    await gate
     return [{ id: 'shared', name: 'Shared' }]
   }
 
-  const [a, b] = await Promise.all([cache.get(fetchFn), cache.get(fetchFn)])
+  const pending = [cache.get(fetchFn), cache.get(fetchFn)]
+  assert.equal(calls, 1, 'the second caller shares the still-held fetch')
+  release()
+  const [a, b] = await Promise.all(pending)
   assert.deepEqual(a, b)
   assert.equal(calls, 1)
 })
@@ -200,9 +205,11 @@ test('a refresh detaches an older catalog read and prevents it replacing fresh m
   cache.invalidate()
   const fresh = [{ id: 'fresh', name: 'Fresh' }]
   const current = cache.get(async () => fresh)
-  const arrived = await Promise.race([current, new Promise((resolve) => { setTimeout(() => resolve('still waiting'), 100) })])
-  assert.notEqual(arrived, 'still waiting', 'the new catalog must not wait for the pre-refresh request')
-  assert.deepEqual(await current, fresh)
+  const arrived = await Promise.race([
+    current,
+    new Promise<never>((_resolve, reject) => { setImmediate(() => reject(new Error('the new catalog waited for the pre-refresh request'))) }),
+  ])
+  assert.deepEqual(arrived, fresh)
   resolveOld([{ id: 'old', name: 'Old' }])
   await old
   assert.deepEqual(await cache.get(), fresh)

@@ -60,6 +60,8 @@ export interface VertexModel {
  */
 export interface TokenProvider {
   get(signal?: AbortSignal): Promise<string>
+  /** Retire only the bearer the provider rejected. */
+  invalidate?(token: string): void
 }
 
 /**
@@ -299,6 +301,7 @@ export async function* streamVertex(
   }
 
   if (!response.ok) {
+    if (response.status === 401) tokens.invalidate?.(token)
     let body: string
     armIdle()
     try {
