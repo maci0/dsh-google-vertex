@@ -1,6 +1,6 @@
 {
   "name": "@maci0/dsh-google-vertex",
-  "version": "0.14.3",
+  "version": "0.14.4",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
